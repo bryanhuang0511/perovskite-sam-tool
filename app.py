@@ -1,11 +1,11 @@
 import os
 import tempfile
 import json
+import io
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from markitdown import MarkItDown
 from doi_extractor import extract_dois_from_text
 from sam_extractor import process_paper_markdown
 from excel_exporter import generate_sam_excel
@@ -26,7 +26,7 @@ async def convert_and_extract(
     file: UploadFile = File(...),
     api_key: str = Form(None)
 ):
-    """Convert uploaded PDF paper to Markdown using MarkItDown and extract SAM dataset & DOI references."""
+    """Convert uploaded PDF paper to Markdown and extract SAM dataset & DOI references."""
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
@@ -35,28 +35,46 @@ async def convert_and_extract(
     temp_pdf_path = os.path.join(temp_dir, file.filename)
     
     try:
+        content = await file.read()
+        
+        # Check payload size (Limit 15MB for fast parsing)
+        if len(content) > 15 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="PDF 檔案過大 (請小於 15MB)")
+
         with open(temp_pdf_path, "wb") as buffer:
-            content = await file.read()
             buffer.write(content)
             
-        # 1. Convert PDF to Markdown using MarkItDown
+        markdown_text = ""
+        
+        # 1. Fast PDF Text Extraction using pypdf (Ensures fast response on serverless)
         try:
-            md_converter = MarkItDown()
-            result = md_converter.convert(temp_pdf_path)
-            markdown_text = result.text_content
-        except Exception as e:
-            print(f"MarkItDown conversion error: {e}")
-            # Fallback simple text extraction using pypdf if markitdown fails on scanned/corrupt file
             import pypdf
             reader = pypdf.PdfReader(temp_pdf_path)
             markdown_text = f"# {file.filename}\n\n"
             for idx, page in enumerate(reader.pages):
-                markdown_text += f"\n## Page {idx+1}\n" + (page.extract_text() or "")
+                text = page.extract_text() or ""
+                markdown_text += f"\n## Page {idx+1}\n" + text
+        except Exception as e:
+            print(f"pypdf extraction error: {e}")
 
-        # 2. Extract Reference DOIs
+        # 2. Try MarkItDown if available and text is sparse
+        if len(markdown_text.strip()) < 200:
+            try:
+                from markitdown import MarkItDown
+                md_converter = MarkItDown()
+                result = md_converter.convert(temp_pdf_path)
+                if result and result.text_content:
+                    markdown_text = result.text_content
+            except Exception as e:
+                print(f"MarkItDown conversion error: {e}")
+
+        if not markdown_text.strip():
+            markdown_text = f"# {file.filename}\n\n(無法提取 PDF 文字層，可能為全掃描圖檔檔)"
+
+        # 3. Extract Reference DOIs
         dois = extract_dois_from_text(markdown_text)
         
-        # 3. Extract SAM p-i-n perovskite dataset features (35 columns)
+        # 4. Extract SAM p-i-n perovskite dataset features (35 columns)
         sam_data = process_paper_markdown(markdown_text, api_key=api_key)
         
         return JSONResponse(content={
@@ -67,6 +85,11 @@ async def convert_and_extract(
             "doi_count": len(dois),
             "sam_count": len(sam_data)
         })
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"解析失敗: {str(e)}")
 
     finally:
         if os.path.exists(temp_pdf_path):
@@ -93,8 +116,6 @@ async def export_excel(payload: dict):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers
     )
-
-import io
 
 if __name__ == "__main__":
     import uvicorn

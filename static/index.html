@@ -576,8 +576,17 @@
                 });
 
                 if (!response.ok) {
-                    const err = await response.json();
-                    throw new Error(err.detail || '轉換與解析失敗');
+                    const errorText = await response.text();
+                    let msg = '伺服器回應異常';
+                    try {
+                        const errJson = JSON.parse(errorText);
+                        msg = errJson.detail || errJson.message || msg;
+                    } catch (e) {
+                        if (response.status === 413) msg = 'PDF 檔案過大 (超過 Serverless 檔案大小限制)';
+                        else if (response.status === 504) msg = '伺服器處理逾時，請再試一次';
+                        else msg = `請求失敗 (${response.status}): ${errorText.substring(0, 100)}`;
+                    }
+                    throw new Error(msg);
                 }
 
                 currentExtractedData = await response.json();
