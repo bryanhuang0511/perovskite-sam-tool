@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鈣鈦礦 SAM 論文數據與 DOI 擷取工具 | Perovskite SAM Extractor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-input: #334155;
+            --accent-primary: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-teal: #14b8a6;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --cell-red-bg: #ffe4e6;
+            --cell-red-text: #9f1239;
+            --cell-black-bg: #090d16;
+            --cell-black-text: #f8fafc;
+            --glass-bg: rgba(30, 41, 59, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            line-height: 1.5;
+        }
+
+        header {
+            background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1.5rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .logo-group h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #818cf8 0%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo-group p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .api-key-input-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+        }
+
+        .api-key-input-group label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .api-key-input-group input {
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            font-size: 0.85rem;
+            width: 180px;
+            outline: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 1600px;
+            width: 100%;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        /* Upload Area */
+        .upload-card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(12px);
+            border: 2px dashed #475569;
+            border-radius: 16px;
+            padding: 2.5rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        .upload-card:hover, .upload-card.dragover {
+            border-color: var(--accent-primary);
+            background: rgba(99, 102, 241, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .upload-icon {
+            font-size: 2.8rem;
+            margin-bottom: 1rem;
+            display: inline-block;
+            background: linear-gradient(135deg, #818cf8 0%, #34d399 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .upload-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+        }
+
+        .upload-subtitle {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Status Banner */
+        .status-banner {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--accent-primary);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            align-items: center;
+            gap: 1rem;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid rgba(99, 102, 241, 0.3);
+            border-radius: 50%;
+            border-top-color: var(--accent-primary);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Tabs Container */
+        .tabs-container {
+            display: none;
+            flex-direction: column;
+            gap: 1rem;
+            flex: 1;
+        }
+
+        .tab-buttons {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 600;
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .tab-btn.active {
+            color: #ffffff;
+            background: var(--accent-primary);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+        }
+
+        .tab-badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.15rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .btn {
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--bg-input);
+            border-color: #64748b;
+        }
+
+        .btn-primary {
+            background: var(--accent-teal);
+            color: #0f172a;
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background: #0d9488;
+            color: #ffffff;
+        }
+
+        .tab-content {
+            display: none;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Table Styles */
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 0.85rem;
+            color: #334155;
+            background: #ffffff;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            font-weight: 700;
+            padding: 0.75rem 0.6rem;
+            text-align: center;
+            border-bottom: 2px solid #cbd5e1;
+            border-right: 1px solid #cbd5e1;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 0.6rem;
+            border-bottom: 1px solid #e2e8f0;
+            border-right: 1px solid #e2e8f0;
+            white-space: nowrap;
+        }
+
+        /* Column Header Color Classes */
+        th.hdr-gray { background-color: #D0CECE; color: #1e293b; }
+        th.hdr-orange { background-color: #FBE5D6; color: #1e293b; }
+        th.hdr-green { background-color: #E2F0D9; color: #1e293b; }
+        th.hdr-blue { background-color: #DAE3F3; color: #1e293b; }
+        th.hdr-bluegray { background-color: #D6DCE5; color: #1e293b; }
+        th.hdr-yellow { background-color: #FFF2CC; color: #1e293b; }
+        th.hdr-purple { background-color: #FFCCFF; color: #1e293b; }
+        th.hdr-white { background-color: #f8fafc; color: #1e293b; }
+
+        /* Cell Confidence Colors */
+        td.cell-red { background-color: #FFC7CE !important; color: #9f1239 !important; font-weight: 500; }
+        td.cell-black { background-color: #000000 !important; color: #ffffff !important; font-weight: 500; }
+        td.cell-white { background-color: #ffffff !important; color: #0f172a !important; }
+
+        /* DOI List View */
+        .doi-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .doi-item {
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .doi-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .doi-str {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #38bdf8;
+            text-decoration: none;
+        }
+
+        .doi-str:hover {
+            text-decoration: underline;
+        }
+
+        .doi-context {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 900px;
+        }
+
+        /* Markdown Preview */
+        .markdown-view {
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.2rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            max-height: 600px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: #10b981;
+            color: #ffffff;
+            padding: 0.8rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-group">
+            <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
+            <p>PDF 自動轉 Markdown (MarkItDown) ➔ 35 欄位 SAM p-i-n 結構特徵擷取 ➔ DOI 文獻提取</p>
+        </div>
+        <div class="header-actions">
+            <div class="api-key-input-group">
+                <label for="apiKey">Gemini API Key (選填):</label>
+                <input type="password" id="apiKey" placeholder="貼上 API Key 啟用 AI 解析..." />
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <!-- Upload Box -->
+        <div class="upload-card" id="dropZone">
+            <div class="upload-icon">📄</div>
+            <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
+            <div class="upload-subtitle">支援各種 SAM 鈣鈦礦太陽能電池論文 PDF (轉換後自動提取數據與 DOI 列表)</div>
+            <input type="file" id="fileInput" accept=".pdf" />
+        </div>
+
+        <!-- Status Loading Banner -->
+        <div class="status-banner" id="statusBanner">
+            <div class="spinner"></div>
+            <div class="status-text" id="statusText">正在使用 MarkItDown 轉換 PDF 為 Markdown 並解析數據點...</div>
+        </div>
+
+        <!-- Result Tabs -->
+        <div class="tabs-container" id="tabsContainer">
+            <div class="tab-buttons">
+                <div class="tab-group">
+                    <button class="tab-btn active" onclick="switchTab('samTab')">
+                        📊 SAM 數據集表格 <span class="tab-badge" id="samCountBadge">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('doiTab')">
+                        🔗 Reference DOI 列表 <span class="tab-badge" id="doiCountBadge">0</span>
+                    </button>
+                    <button class="tab-btn" onclick="switchTab('mdTab')">
+                        📝 Markdown 原文預覽
+                    </button>
+                </div>
+                <div class="action-btns">
+                    <button class="btn" onclick="copyCurrentTabContent()">
+                        📋 複製內容
+                    </button>
+                    <button class="btn btn-primary" onclick="downloadExcel()">
+                        📥 導出標準 Excel (.xlsx)
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab 1: SAM Data Table -->
+            <div class="tab-content active" id="samTab">
+                <div class="table-wrapper">
+                    <table id="samTable">
+                        <thead>
+                            <tr id="samTableHeader">
+                                <!-- Headers rendered dynamically -->
+                            </tr>
+                        </thead>
+                        <tbody id="samTableBody">
+                            <!-- Rows rendered dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 2: Reference DOIs -->
+            <div class="tab-content" id="doiTab">
+                <div class="doi-list" id="doiList">
+                    <!-- DOIs rendered dynamically -->
+                </div>
+            </div>
+
+            <!-- Tab 3: Markdown Preview -->
+            <div class="tab-content" id="mdTab">
+                <div class="markdown-view" id="markdownPreview">
+                    <!-- Markdown text rendered dynamically -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast" id="toast">已成功複製到剪貼簿！</div>
+
+    <script>
+        // Store current extracted payload
+        let currentExtractedData = {
+            filename: "",
+            markdown: "",
+            sam_data: [],
+            dois: []
+        };
+
+        // Save and Load API Key
+        const apiKeyInput = document.getElementById('apiKey');
+        apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+        apiKeyInput.addEventListener('change', () => {
+            localStorage.setItem('gemini_api_key', apiKeyInput.value.trim());
+        });
+
+        // File Drag & Drop
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+
+        async function handleFileUpload(file) {
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('請選擇 PDF 格式之論文檔案！');
+                return;
+            }
+
+            const statusBanner = document.getElementById('statusBanner');
+            const tabsContainer = document.getElementById('tabsContainer');
+            const statusText = document.getElementById('statusText');
+
+            statusBanner.style.display = 'flex';
+            tabsContainer.style.display = 'none';
+            statusText.innerText = `正在使用 MarkItDown 轉換 ${file.name} 並進行數據擷取...`;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            if (apiKeyInput.value.trim()) {
+                formData.append('api_key', apiKeyInput.value.trim());
+            }
+
+            try {
+                const response = await fetch('/api/convert-and-extract', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.detail || '轉換與解析失敗');
+                }
+
+                currentExtractedData = await response.json();
+                renderResults();
+                statusBanner.style.display = 'none';
+                tabsContainer.style.display = 'flex';
+                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個 DOI！`);
+            } catch (err) {
+                alert(`處理失敗: ${err.message}`);
+                statusBanner.style.display = 'none';
+            }
+        }
+
+        // Render extracted data into tables and UI
+        const HEADER_CONFIG = [
+            { key: 'ref_id', label: '編號', class: 'hdr-white' },
+            { key: 'sam_material', label: 'SAM/HTL材料名稱', class: 'hdr-white' },
+            { key: 'smiles', label: 'smile', class: 'hdr-white' },
+            { key: 'nio2', label: 'NiO2', class: 'hdr-gray' },
+            { key: 'ethanol', label: 'ethanol', class: 'hdr-orange' },
+            { key: 'toluene', label: 'toluene', class: 'hdr-orange' },
+            { key: 'ipa', label: 'IPA', class: 'hdr-orange' },
+            { key: 'thf', label: 'THF', class: 'hdr-orange' },
+            { key: 'chlorobenzene', label: 'chlorobenzene', class: 'hdr-orange' },
+            { key: 'methoxyethanol_2', label: '2-Methoxyethanol', class: 'hdr-orange' },
+            { key: 'ch2cl2', label: 'CH2CL2', class: 'hdr-orange' },
+            { key: 'concentration', label: 'concentration(mg/ml)', class: 'hdr-green' },
+            { key: 'wash', label: 'wash', class: 'hdr-blue' },
+            { key: 'energy_e', label: 'E', class: 'hdr-green' },
+            { key: 'cs', label: 'Cs', class: 'hdr-bluegray' },
+            { key: 'fa', label: 'FA', class: 'hdr-bluegray' },
+            { key: 'ma', label: 'MA', class: 'hdr-bluegray' },
+            { key: 'pb', label: 'Pb', class: 'hdr-yellow' },
+            { key: 'sn', label: 'Sn', class: 'hdr-yellow' },
+            { key: 'i', label: 'I', class: 'hdr-green' },
+            { key: 'br', label: 'Br', class: 'hdr-green' },
+            { key: 'cl', label: 'CL', class: 'hdr-green' },
+            { key: 'c60', label: 'C60', class: 'hdr-gray' },
+            { key: 'bcp', label: 'BCP', class: 'hdr-gray' },
+            { key: 'pc60bm', label: 'PC60BM', class: 'hdr-gray' },
+            { key: 'pcbm', label: 'PCBM', class: 'hdr-gray' },
+            { key: 'pc61bm', label: 'PC61BM', class: 'hdr-gray' },
+            { key: 'peai', label: 'PEAI', class: 'hdr-gray' },
+            { key: 'ald_sno2', label: 'ALD-SnO2', class: 'hdr-gray' },
+            { key: 'pce', label: 'PCE', class: 'hdr-purple' },
+            { key: 'reference_doi', label: 'Reference_DOI', class: 'hdr-white' },
+            { key: 'ref_author', label: 'Ref_author', class: 'hdr-white' },
+            { key: 'ref_journal', label: 'Ref_journal', class: 'hdr-white' },
+            { key: 'data_status', label: 'Data_status', class: 'hdr-white' },
+            { key: 'notes', label: 'Notes', class: 'hdr-white' }
+        ];
+
+        function renderResults() {
+            // Update badges
+            document.getElementById('samCountBadge').innerText = currentExtractedData.sam_data.length;
+            document.getElementById('doiCountBadge').innerText = currentExtractedData.dois.length;
+
+            // Render SAM Table Header
+            const headerTr = document.getElementById('samTableHeader');
+            headerTr.innerHTML = HEADER_CONFIG.map(h => `<th class="${h.class}">${h.label}</th>`).join('');
+
+            // Render SAM Table Body
+            const bodyTbody = document.getElementById('samTableBody');
+            bodyTbody.innerHTML = currentExtractedData.sam_data.map(row => {
+                const confColors = row.confidence_colors || {};
+                const cells = HEADER_CONFIG.map(h => {
+                    const val = row[h.key] !== undefined ? row[h.key] : '';
+                    const conf = (confColors[h.key] || '').toLowerCase();
+                    let cellClass = 'cell-white';
+                    if (conf === 'red') cellClass = 'cell-red';
+                    else if (conf === 'black') cellClass = 'cell-black';
+                    return `<td class="${cellClass}">${val}</td>`;
+                }).join('');
+                return `<tr>${cells}</tr>`;
+            }).join('');
+
+            // Render DOIs List
+            const doiList = document.getElementById('doiList');
+            if (currentExtractedData.dois.length === 0) {
+                doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 10.xxxx/xxx 格式之 Reference DOI</div>`;
+            } else {
+                doiList.innerHTML = currentExtractedData.dois.map((item, i) => `
+                    <div class="doi-item">
+                        <div class="doi-info">
+                            <a href="${item.url}" target="_blank" class="doi-str">#${i+1}. ${item.doi}</a>
+                            <div class="doi-context">Line ${item.line_number}: ${escapeHtml(item.context)}</div>
+                        </div>
+                        <button class="btn" onclick="copyToClipboard('${item.doi}')">複製 DOI</button>
+                    </div>
+                `).join('');
+            }
+
+            // Render Markdown Preview
+            document.getElementById('markdownPreview').innerText = currentExtractedData.markdown;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+            if (targetBtn) targetBtn.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // Copy Table TSV or DOI list
+        function copyCurrentTabContent() {
+            const activeTab = document.querySelector('.tab-content.active').id;
+            if (activeTab === 'samTab') {
+                // Generate TSV string for copy-pasting directly into Excel
+                let tsv = HEADER_CONFIG.map(h => h.label).join('\t') + '\n';
+                currentExtractedData.sam_data.forEach(row => {
+                    const line = HEADER_CONFIG.map(h => row[h.key] !== undefined ? row[h.key] : '').join('\t');
+                    tsv += line + '\n';
+                });
+                copyToClipboard(tsv, '已複製 SAM 表格數據 (可直接貼上至 Excel)！');
+            } else if (activeTab === 'doiTab') {
+                const doiText = currentExtractedData.dois.map(d => d.doi).join('\n');
+                copyToClipboard(doiText, '已複製所有 Reference DOI 列表！');
+            } else if (activeTab === 'mdTab') {
+                copyToClipboard(currentExtractedData.markdown, '已複製 Markdown 原文！');
+            }
+        }
+
+        async function downloadExcel() {
+            if (!currentExtractedData.sam_data || currentExtractedData.sam_data.length === 0) {
+                alert('無可導出之數據點');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/export-excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(currentExtractedData)
+                });
+
+                if (!response.ok) throw new Error('導出 Excel 失敗');
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = currentExtractedData.filename.replace(/\.pdf$/i, '') + '_SAM_dataset.xlsx';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                showToast('已開始下載 Excel 檔案！');
+            } catch (err) {
+                alert(`導出失敗: ${err.message}`);
+            }
+        }
+
+        function copyToClipboard(text, msg = '已成功複製到剪貼簿！') {
+            navigator.clipboard.writeText(text).then(() => {
+                showToast(msg);
+            }).catch(() => {
+                alert('複製失敗，請手動選取複製');
+            });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+    </script>
+</body>
+</html>
