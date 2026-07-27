@@ -23,10 +23,11 @@ def index():
 
 @app.post("/api/extract-text-sam")
 async def extract_text_sam(payload: dict):
-    """Extract SAM dataset and DOI references directly from text/markdown payload (Bypasses Vercel 4.5MB binary PDF upload limit)."""
+    """Extract SAM dataset and DOI references directly from text/markdown payload and optional figure images."""
     markdown_text = payload.get("markdown", "")
     filename = payload.get("filename", "paper.pdf")
     api_key = payload.get("api_key", None)
+    images_base64 = payload.get("images", [])
     
     if not markdown_text.strip():
         raise HTTPException(status_code=400, detail="未收到論文文字內容。")
@@ -35,7 +36,7 @@ async def extract_text_sam(payload: dict):
     dois = extract_dois_from_text(markdown_text)
     
     # Extract SAM p-i-n perovskite dataset features
-    sam_data = process_paper_markdown(markdown_text, api_key=api_key)
+    sam_data = process_paper_markdown(markdown_text, api_key=api_key, images_base64=images_base64)
     
     return JSONResponse(content={
         "filename": filename,
