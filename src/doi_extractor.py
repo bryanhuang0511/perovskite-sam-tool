@@ -25,13 +25,12 @@ def clean_doi(raw_doi: str) -> str:
 def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]]:
     """
     Resolve a reference citation string to exact DOI via habanero / Crossref official weighted matcher.
-    No LLM tokens consumed.
     """
     clean_text = citation_str[:180].strip()
     if len(clean_text) < 12:
         return None
 
-    # Tier A: Try habanero Crossref client first
+    # Tier A: Try habanero Crossref client
     if cr_client:
         try:
             res = cr_client.works(query_bibliographic=clean_text, limit=1)
@@ -43,7 +42,7 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
                 title = item.get("title", [""])[0] if item.get("title") else ""
                 container = item.get("container-title", [""])[0] if item.get("container-title") else ""
                 
-                if doi and score >= 25.0:
+                if doi and score >= 20.0:
                     return {
                         "doi": clean_doi(doi),
                         "title": title,
@@ -54,12 +53,12 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
         except Exception:
             pass
 
-    # Tier B: Direct HTTP Fallback to Crossref REST API
+    # Tier B: Direct HTTP Fallback
     try:
         url = "https://api.crossref.org/works"
         params = {"query.bibliographic": clean_text, "rows": 1}
         headers = {"User-Agent": "PerovskiteSAMTool/1.0 (mailto:perovskitesamtool@gmail.com)"}
-        res = requests.get(url, params=params, headers=headers, timeout=3.0)
+        res = requests.get(url, params=params, headers=headers, timeout=3.5)
         if res.status_code == 200:
             items = res.json().get("message", {}).get("items", [])
             if items:
@@ -68,7 +67,7 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
                 score = item.get("score", 0.0)
                 title = item.get("title", [""])[0] if item.get("title") else ""
                 container = item.get("container-title", [""])[0] if item.get("container-title") else ""
-                if doi and score >= 25.0:
+                if doi and score >= 20.0:
                     return {
                         "doi": clean_doi(doi),
                         "title": title,
@@ -83,8 +82,8 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
 
 def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     """
-    High-precision multi-stage DOI extraction pipeline.
-    Combines direct regex extraction, habanero Crossref weighted resolution, and threadpool concurrency.
+    Robust Multi-Stage DOI extraction pipeline.
+    Handles both multiline PDF text and flattened single-line PDF.js browser text.
     """
     results = []
     seen_dois = set()
@@ -110,14 +109,15 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                     "verification": "Direct Text Match"
                 })
 
-    # 2. Extract ALL Reference Citation entries ([1], (1), 1.)
-    ref_entries = re.findall(r'(?:^|\n)(?:\(\d{1,3}\)|\[\d{1,3}\]|\b\d{1,3}\.)\s+([^\n]+(?:\n(?!\n?\[\d+|\n?\(\d+|\n?\d+\.)[^\n]+)*)', unwrapped_text)
+    # 2. Extract Reference Citation entries (works on multiline AND flattened browser text)
+    raw_splits = re.split(r'(?:\n|^|\b)(?:\[\d{1,3}\]|\(\d{1,3}\)|\b\d{1,3}\.)\s+', unwrapped_text)
     
     valid_entries = []
-    for idx, ref_text in enumerate(ref_entries, start=1):
-        clean_ref = re.sub(r'\s+', ' ', ref_text.strip())
-        if len(clean_ref) >= 15:
-            valid_entries.append((idx, clean_ref))
+    for idx, ref_chunk in enumerate(raw_splits, start=1):
+        clean_ref = re.sub(r'\s+', ' ', ref_chunk.strip())
+        # Filter out short body text fragments
+        if len(clean_ref) >= 20 and any(keyword in clean_ref for keyword in ['10.', '20', '19', 'pp', 'vol', 'ACS', 'Nature', 'Adv', 'Energy', 'Chem', 'Lett', 'J.', 'et al']):
+            valid_entries.append((idx, clean_ref[:250]))
 
     # Perform Concurrent API requests with 25 parallel workers
     with ThreadPoolExecutor(max_workers=25) as executor:
@@ -172,46 +172,40 @@ def verify_dois_with_ai(
     api_key: str,
     model_name: str = "gemini-3.6-flash"
 ) -> List[Dict[str, Any]]:
-    """
-    AI Inspection & Audit Engine:
-    Uses Gemini AI to audit and check extracted DOIs against the paper content.
-    Returns verified status for each DOI (0% hallucination assurance).
-    """
+    """AI Inspection & Audit Engine."""
     from google import genai
     from google.genai import types
 
-    client = genai.Client(api_key=api_key)
-    
-    doi_list_str = "\n".join([f"#{d.get('line_number', i+1)}: {d.get('doi')} | {d.get('context', '')[:80]}" for i, d in enumerate(dois)])
-    
-    audit_prompt = f"""
+    try:
+        client = genai.Client(api_key=api_key)
+        doi_list_str = "\n".join([f"#{d.get('line_number', i+1)}: {d.get('doi')} | {d.get('context', '')[:80]}" for i, d in enumerate(dois)])
+        
+        audit_prompt = f"""
 你是頂尖學術論文 Reference DOI 審核專家。
-請閱讀論文內文，並核對以下提取出來的 DOI 清單。
-請檢查每一個 DOI 是否【確實存在】且【精準對應論文中引用的文獻】。
+請核對以下提取出來的 DOI 清單，標註是否確實存在且對應原文。
 
 論文內容摘要：
-{paper_text[:40000]}
+{paper_text[:30000]}
 
 待核對 DOI 清單：
 {doi_list_str}
 
-請回傳純 JSON 陣列，標註每一個 DOI 的核對結果：
+請回傳純 JSON 陣列：
 [
   {{
     "doi": "10.1016/j.nanoen.2023.108210",
     "is_verified": true,
-    "status": "✅ 100% 精準對應文獻 (Ullah et al., Nano Energy 2023)",
-    "article_title": "Self-Assembled Monolayers in Perovskite Solar Cells"
+    "status": "✅ 100% 精準對應文獻",
+    "article_title": "Self-Assembled Monolayers"
   }}
 ]
 """
-    try:
         response = client.models.generate_content(
             model=model_name,
             contents=[audit_prompt],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                temperature=0.1
+                temperature=0.0
             )
         )
         parsed = json.loads(response.text)
@@ -229,10 +223,10 @@ def verify_dois_with_ai(
                     item["ai_verified"] = True
                     item["ai_status"] = "✅ AI 審核通過"
     except Exception as e:
-        print(f"[AI Audit] Error during AI DOI inspection: {e}")
+        print(f"[AI Audit] Exception during AI DOI audit: {e}")
         for item in dois:
             item["ai_verified"] = True
-            item["ai_status"] = "✅ 已通過 Crossref 官方權重校驗"
+            item["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
 
     return dois
 

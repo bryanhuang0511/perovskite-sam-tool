@@ -513,13 +513,13 @@
         <div class="upload-card" id="dropZone">
             <div class="upload-icon">📄</div>
             <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
-            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (每次上傳自動強制清空歷史記憶與快取)</div>
+            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
             <input type="file" id="fileInput" accept=".pdf" />
         </div>
 
         <div class="status-banner" id="statusBanner">
             <div class="spinner"></div>
-            <div class="status-text" id="statusText">正在清空舊快取並獨立解析新 PDF 數據...</div>
+            <div class="status-text" id="statusText">正在獨立解析 PDF 內文並對照 Crossref Habanero 引擎...</div>
         </div>
 
         <!-- RPM & TPM Rate Limit Dashboard Card -->
@@ -666,7 +666,12 @@
                 for (const item of textContent.items) {
                     if (!item.str) continue;
                     const currentY = item.transform ? item.transform[5] : null;
-                    if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 4) {
+                    const cleanStr = item.str.trim();
+
+                    // Force line breaks on Y delta > 2.5 OR reference citation prefix [1], (1), 1.
+                    if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 2.5) {
+                        pageText += "\n";
+                    } else if (/^\[\d{1,3}\]/.test(cleanStr) || /^\(\d{1,3}\)/.test(cleanStr) || /^\d{1,3}\.\s/.test(cleanStr)) {
                         pageText += "\n";
                     } else if (item.hasEOL) {
                         pageText += "\n";
@@ -687,7 +692,7 @@
                 return;
             }
 
-            // 1. Mandatory Memory-Wipe & State Reset for fresh execution
+            // Mandatory Memory-Wipe & State Reset for fresh execution
             currentExtractedData = {
                 filename: "",
                 markdown: "",
@@ -712,7 +717,7 @@
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
             tokenDashboard.style.display = 'none';
-            statusText.innerText = `正在清空舊記憶並獨立解析新 PDF (${file.name})...`;
+            statusText.innerText = `正在獨立解析 PDF 內文並對照 Crossref Habanero 引擎 (${file.name})...`;
 
             const startTime = Date.now();
 
