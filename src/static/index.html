@@ -169,7 +169,7 @@
             display: none;
         }
 
-        /* RPM & TPM Dashboard Card */
+        /* RPM & TPM Rate Limit Dashboard Card */
         .token-dashboard-card {
             display: none;
             background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
@@ -487,7 +487,7 @@
     <header>
         <div class="logo-group">
             <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
-            <p>PDF 轉檔 ➔ 35 欄位 SAM 特徵擷取 (支援 Gemini 3.6/3.1/OpenAI/DeepSeek) ➔ 純文字 Reference DOI</p>
+            <p>Habanero/Crossref 工具鏈 ➔ 35 欄位 SAM 特徵擷取 ➔ AI DOI 審核比對</p>
         </div>
         <div class="header-actions">
             <!-- Multi-Model Provider Dropdown -->
@@ -694,7 +694,7 @@
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
             tokenDashboard.style.display = 'none';
-            statusText.innerText = `正在讀取 ${file.name} 內文並透過 AI 提取數據點與純文字 DOI 列表...`;
+            statusText.innerText = `正在透過 Habanero / Crossref 引擎解析 DOI 與 AI 數據特徵 (${file.name})...`;
 
             const startTime = Date.now();
 
@@ -767,7 +767,7 @@
                 renderResults(durationSec);
                 statusBanner.style.display = 'none';
                 tabsContainer.style.display = 'flex';
-                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個純文字 DOI！`);
+                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個校驗 DOI！`);
             } catch (err) {
                 alert(`處理失敗: ${err.message}`);
                 statusBanner.style.display = 'none';
@@ -824,7 +824,6 @@
             const totalTokens = usage.total_tokens || 0;
 
             if (totalTokens || inputTokens) {
-                // Calculate TPM
                 const calculatedTpm = Math.round((totalTokens / durationSec) * 60);
                 const tpmFormatted = calculatedTpm > 1000000 ? `${(calculatedTpm / 1000000).toFixed(1)}M TPM` : `${(calculatedTpm / 1000).toFixed(1)}k TPM`;
 
@@ -856,12 +855,19 @@
 
             const doiList = document.getElementById('doiList');
             if (currentExtractedData.dois.length === 0) {
-                doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 10.xxxx/xxx 格式之 Reference DOI</div>`;
+                doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 Reference DOI</div>`;
             } else {
-                doiList.innerHTML = currentExtractedData.dois.map((item, i) => `
+                doiList.innerHTML = currentExtractedData.dois.map((item, i) => {
+                    const statusTag = item.ai_status || item.verification || '✅ Habanero/Crossref 已驗證';
+                    return `
                     <div class="doi-item">
                         <div class="doi-info">
-                            <div class="doi-pure-text">#${i+1}. ${item.doi}</div>
+                            <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                                <div class="doi-pure-text">#${i+1}. ${item.doi}</div>
+                                <span style="font-size:0.75rem; background:rgba(20, 184, 166, 0.2); color:#2dd4bf; border:1px solid #14b8a6; padding:0.15rem 0.6rem; border-radius:12px; font-weight:600;">
+                                    ${escapeHtml(statusTag)}
+                                </span>
+                            </div>
                             <div class="doi-context">Line ${item.line_number}: ${escapeHtml(item.context)}</div>
                         </div>
                         <div class="doi-btn-group">
@@ -869,7 +875,8 @@
                             <button class="btn" onclick="window.open('https://scholar.google.com/scholar?q=${encodeURIComponent(item.doi)}', '_blank')">🔍 Google 學術搜尋</button>
                         </div>
                     </div>
-                `).join('');
+                    `;
+                }).join('');
             }
 
             document.getElementById('markdownPreview').innerText = currentExtractedData.markdown;

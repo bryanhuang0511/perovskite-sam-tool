@@ -7,3 +7,4 @@ pandas
 pypdf
 google-genai
 requests
+habanero
