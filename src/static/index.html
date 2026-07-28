@@ -169,31 +169,31 @@
             display: none;
         }
 
-        /* Token Dashboard Card */
+        /* RPM & TPM Dashboard Card */
         .token-dashboard-card {
             display: none;
             background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
             border: 1px solid var(--accent-teal);
             border-radius: 12px;
-            padding: 1rem 1.5rem;
+            padding: 1.2rem 1.8rem;
             align-items: center;
             justify-content: space-between;
-            box-shadow: 0 4px 15px rgba(20, 184, 166, 0.15);
+            box-shadow: 0 4px 20px rgba(20, 184, 166, 0.2);
             flex-wrap: wrap;
-            gap: 1rem;
+            gap: 1.2rem;
         }
 
         .token-info-group {
             display: flex;
             align-items: center;
-            gap: 1.5rem;
+            gap: 2rem;
             flex-wrap: wrap;
         }
 
         .token-stat {
             display: flex;
             flex-direction: column;
-            gap: 0.1rem;
+            gap: 0.15rem;
         }
 
         .token-label {
@@ -201,11 +201,12 @@
             color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            font-weight: 600;
         }
 
         .token-value {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 1.1rem;
+            font-size: 1.15rem;
             font-weight: 700;
             color: #38bdf8;
         }
@@ -214,7 +215,7 @@
             background: rgba(99, 102, 241, 0.2);
             border: 1px solid var(--accent-primary);
             color: #818cf8;
-            padding: 0.25rem 0.75rem;
+            padding: 0.3rem 0.85rem;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 600;
@@ -386,7 +387,7 @@
 
         th.hdr-gray { background-color: #D0CECE; color: #1e293b; }
         th.hdr-orange { background-color: #FBE5D6; color: #1e293b; }
-        th.hdr-green { background-color: #FFE2F0D9; color: #1e293b; }
+        th.hdr-green { background-color: #E2F0D9; color: #1e293b; }
         th.hdr-blue { background-color: #DAE3F3; color: #1e293b; }
         th.hdr-bluegray { background-color: #D6DCE5; color: #1e293b; }
         th.hdr-yellow { background-color: #FFF2CC; color: #1e293b; }
@@ -521,21 +522,21 @@
             <div class="status-text" id="statusText">正在讀取 PDF 內文與數據點...</div>
         </div>
 
-        <!-- Token Usage Dashboard Card -->
+        <!-- RPM & TPM Rate Limit Dashboard Card -->
         <div class="token-dashboard-card" id="tokenDashboard">
             <div class="token-info-group">
-                <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-teal);">⚡ AI Token 儀表板</div>
+                <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-teal);">⚡ AI 頻寬儀表板 (RPM & TPM)</div>
                 <div class="token-stat">
-                    <span class="token-label">輸入 (Input Tokens)</span>
-                    <span class="token-value" id="tokenInput">0</span>
+                    <span class="token-label">RPM (請求速率)</span>
+                    <span class="token-value" id="tokenRpm" style="color:#38bdf8;">1 / 15 RPM</span>
                 </div>
                 <div class="token-stat">
-                    <span class="token-label">輸出 (Output Tokens)</span>
-                    <span class="token-value" id="tokenOutput">0</span>
+                    <span class="token-label">TPM (Token 速率)</span>
+                    <span class="token-value" id="tokenTpm" style="color:#34d399;">0 / 1M TPM</span>
                 </div>
                 <div class="token-stat">
-                    <span class="token-label">總計 (Total Tokens)</span>
-                    <span class="token-value" id="tokenTotal" style="color:#34d399;">0</span>
+                    <span class="token-label">本次 Token 消耗</span>
+                    <span class="token-value" id="tokenTotal" style="color:#f8fafc;">0 (輸入 0 | 輸出 0)</span>
                 </div>
             </div>
             <div class="token-model-badge" id="tokenModelUsed">model: gemini-3.6-flash</div>
@@ -695,6 +696,8 @@
             tokenDashboard.style.display = 'none';
             statusText.innerText = `正在讀取 ${file.name} 內文並透過 AI 提取數據點與純文字 DOI 列表...`;
 
+            const startTime = Date.now();
+
             try {
                 let markdownText = "";
                 try {
@@ -757,8 +760,11 @@
                     throw new Error(msg);
                 }
 
+                const endTime = Date.now();
+                const durationSec = Math.max((endTime - startTime) / 1000, 0.5);
+
                 currentExtractedData = await response.json();
-                renderResults();
+                renderResults(durationSec);
                 statusBanner.style.display = 'none';
                 tabsContainer.style.display = 'flex';
                 showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個純文字 DOI！`);
@@ -806,16 +812,25 @@
             { key: 'notes', label: 'Notes', class: 'hdr-white' }
         ];
 
-        function renderResults() {
+        function renderResults(durationSec = 1.0) {
             document.getElementById('samCountBadge').innerText = currentExtractedData.sam_data.length;
             document.getElementById('doiCountBadge').innerText = currentExtractedData.dois.length;
 
+            // Render RPM & TPM Rate Limit Dashboard
             const tokenDashboard = document.getElementById('tokenDashboard');
             const usage = currentExtractedData.usage_info || {};
-            if (usage.total_tokens || usage.input_tokens) {
-                document.getElementById('tokenInput').innerText = (usage.input_tokens || 0).toLocaleString();
-                document.getElementById('tokenOutput').innerText = (usage.output_tokens || 0).toLocaleString();
-                document.getElementById('tokenTotal').innerText = (usage.total_tokens || 0).toLocaleString();
+            const inputTokens = usage.input_tokens || 0;
+            const outputTokens = usage.output_tokens || 0;
+            const totalTokens = usage.total_tokens || 0;
+
+            if (totalTokens || inputTokens) {
+                // Calculate TPM
+                const calculatedTpm = Math.round((totalTokens / durationSec) * 60);
+                const tpmFormatted = calculatedTpm > 1000000 ? `${(calculatedTpm / 1000000).toFixed(1)}M TPM` : `${(calculatedTpm / 1000).toFixed(1)}k TPM`;
+
+                document.getElementById('tokenRpm').innerText = `1 / 15 RPM`;
+                document.getElementById('tokenTpm').innerText = `${tpmFormatted} (${(totalTokens/1000).toFixed(1)}k tokens)`;
+                document.getElementById('tokenTotal').innerText = `${totalTokens.toLocaleString()} (輸入 ${inputTokens.toLocaleString()} | 輸出 ${outputTokens.toLocaleString()})`;
                 document.getElementById('tokenModelUsed').innerText = `model: ${usage.model_used || 'gemini-3.6-flash'}`;
                 tokenDashboard.style.display = 'flex';
             } else {

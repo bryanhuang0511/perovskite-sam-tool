@@ -22,7 +22,7 @@ def resolve_citation_str_to_doi(citation_str: str) -> str:
         url = "https://api.crossref.org/works"
         params = {"query.bibliographic": citation_str[:160], "rows": 1}
         headers = {"User-Agent": "PerovskiteSAMTool/1.0 (mailto:perovskitesamtool@gmail.com)"}
-        res = requests.get(url, params=params, headers=headers, timeout=2.5)
+        res = requests.get(url, params=params, headers=headers, timeout=3.5)
         if res.status_code == 200:
             items = res.json().get("message", {}).get("items", [])
             if items:
@@ -33,14 +33,19 @@ def resolve_citation_str_to_doi(citation_str: str) -> str:
 
 def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     """
-    Extract reference DOIs from full text or markdown content using concurrent ThreadPoolExecutor and Crossref.
+    Extract reference DOIs from full text or markdown content for papers with up to 200+ references.
+    Supports high concurrency and Crossref resolution.
     """
     results = []
     seen_dois = set()
 
+    # Pre-process text to join line breaks in DOIs
+    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]+?)-\s*\n\s*([^\s]+)', r'\1\2', text)
+    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]*?)\s*\n\s*([a-zA-Z0-9.\-_/;()]+)', r'\1\2', unwrapped_text)
+
     # 1. Direct Regex Match for 10.xxxx/xxxx
     pattern = r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+'
-    direct_matches = re.findall(pattern, text, re.IGNORECASE)
+    direct_matches = re.findall(pattern, unwrapped_text, re.IGNORECASE)
     for match in direct_matches:
         doi = clean_doi(match)
         if doi.startswith('10.') and '/' in doi and len(doi) > 7:
@@ -54,18 +59,17 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                     "in_reference_section": True
                 })
 
-    # 2. Extract Reference Citation entries (like (1) Author... Journal 2023, [2] Author..., 1. Author...)
-    # Matches reference citation lines: (1) Author..., [1] Author..., 1. Author...
-    ref_entries = re.findall(r'(?:\(\d{1,3}\)|\[\d{1,3}\]|\n\d{1,3}\.)\s+([^\n]+(?:\n[^\(\[\n]+)*)', text)
+    # 2. Extract ALL Reference Citation entries (like [1] Author..., (1) Author..., 1. Author...)
+    ref_entries = re.findall(r'(?:^|\n)(?:\(\d{1,3}\)|\[\d{1,3}\]|\b\d{1,3}\.)\s+([^\n]+(?:\n(?!\n?\[\d+|\n?\(\d+|\n?\d+\.)[^\n]+)*)', unwrapped_text)
     
     valid_entries = []
-    for idx, ref_text in enumerate(ref_entries[:50], start=1):
+    for idx, ref_text in enumerate(ref_entries, start=1):
         clean_ref = re.sub(r'\s+', ' ', ref_text.strip())
         if len(clean_ref) >= 15:
             valid_entries.append((idx, clean_ref))
 
-    # Perform Concurrent API requests with 10 parallel workers
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    # Perform Concurrent API requests with 25 parallel workers to resolve ALL 145+ citations
+    with ThreadPoolExecutor(max_workers=25) as executor:
         future_to_entry = {}
         for idx, clean_ref in valid_entries:
             doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
@@ -85,7 +89,7 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                 future_to_entry[future] = (idx, clean_ref)
 
         try:
-            for future in as_completed(future_to_entry, timeout=6.0):
+            for future in as_completed(future_to_entry, timeout=30.0):
                 try:
                     found_doi = future.result()
                     if found_doi:
@@ -112,7 +116,7 @@ if __name__ == "__main__":
     if hasattr(sys.stdout, 'reconfigure'):
         sys.stdout.reconfigure(encoding='utf-8')
     from pypdf import PdfReader
-    pdf_path = r"c:\Users\yexia\Documents\黃士緯\大學\趙宇強\GitHub\擷取工具\2023 99筆 machine-learning-accelerated-design-of-self-assembled-monolayers-for-high-performance-perovskite-solar-cells.pdf"
+    pdf_path = r"c:\Users\yexia\Documents\黃士緯\大學\趙宇強\GitHub\擷取工具\2026 Review  pin  1-s2.0-S0927024826000553-main [Solar Energy Materials and Solar Cells 299 (2026) 114214 ].pdf"
     text = "".join([p.extract_text() or "" for p in PdfReader(pdf_path).pages])
     
     t0 = time.time()
