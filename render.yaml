@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: perovskite-sam-tool
-    env: docker
-    plan: free
-    region: singapore
-    envVars:
-      - key: PORT
-        value: 8000

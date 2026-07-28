@@ -1,9 +1,0 @@
-markitdown
-fastapi
-uvicorn
-python-multipart
-openpyxl
-pandas
-pypdf
-google-genai
-requests

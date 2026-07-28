@@ -5,3 +5,8 @@ __pycache__/
 *.xlsx
 .DS_Store
 .env
+src/tests/
+static/
+Dockerfile
+render.yaml
+run_server.bat
