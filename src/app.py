@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import json
 import io
@@ -6,13 +7,24 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
-from src.sam_extractor import process_paper_markdown
-from src.excel_exporter import generate_sam_excel
+base_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(base_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+if base_dir not in sys.path:
+    sys.path.insert(0, base_dir)
+
+try:
+    from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
+    from src.sam_extractor import process_paper_markdown
+    from src.excel_exporter import generate_sam_excel
+except ImportError:
+    from doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
+    from sam_extractor import process_paper_markdown
+    from excel_exporter import generate_sam_excel
 
 app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1.0.0")
 
-base_dir = os.path.dirname(os.path.abspath(__file__))
 static_dir = os.path.join(base_dir, "static")
 if not os.path.exists(static_dir):
     static_dir = "static"
@@ -74,14 +86,11 @@ async def extract_text_sam(payload: dict):
         if not raw_markdown.strip():
             raise HTTPException(status_code=400, detail="未收到論文文字內容。")
 
-        # Compress text safely for Vercel Serverless stability
         markdown_text = safe_truncate_paper_text(raw_markdown)
 
-        # Step 1: Tool-based High-Precision DOI Extraction (0 Tokens consumed!)
         dois = extract_dois_from_text(markdown_text)
         seen_dois = {d["doi"].lower() for d in dois}
 
-        # Step 2: AI SAM Dataset Feature Extraction with Fresh Stateless Memory-Wipe Guarantee
         res_dict, usage_info = process_paper_markdown(
             markdown_text,
             api_key=api_key,
@@ -95,7 +104,6 @@ async def extract_text_sam(payload: dict):
         sam_data = res_dict.get("sam_dataset", [])
         ai_dois = res_dict.get("reference_dois", [])
 
-        # Step 3: If API Key is present, run AI Full-Reference DOI Engine to return ALL 140+ DOIs in 1 pass!
         if api_key and api_key.strip():
             try:
                 ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
@@ -105,7 +113,6 @@ async def extract_text_sam(payload: dict):
             except Exception as e:
                 print(f"[AI All DOIs Error]: {e}")
 
-        # Merge any extra AI-discovered DOIs
         for ai_item in ai_dois:
             if isinstance(ai_item, dict):
                 doi_val = clean_doi(ai_item.get("doi", ""))
@@ -125,7 +132,6 @@ async def extract_text_sam(payload: dict):
                     "verification": "AI Extracted"
                 })
 
-        # Step 4: Add verification badges if not already present
         for d in dois:
             if "ai_status" not in d:
                 d["ai_verified"] = True
