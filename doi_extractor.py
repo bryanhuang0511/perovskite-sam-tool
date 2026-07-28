@@ -1,29 +1,38 @@
 import re
 from typing import List, Dict, Any
 
-# DOI regex pattern matching standard 10.xxxx/xxxx structure
+# Standard DOI pattern
 DOI_PATTERN = r'\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b'
 
 def clean_doi(raw_doi: str) -> str:
-    """Clean and normalize a extracted DOI string."""
+    """Clean and normalize an extracted DOI string."""
     doi = raw_doi.strip()
-    # Remove trailing punctuation often captured by regex
-    doi = re.sub(r'[.,;:\)\>\]]+$', '', doi)
-    # Remove leading prefixes if present
+    
+    # Strip leading URL prefixes if present
     doi = re.sub(r'^(https?://(?:dx\.)?doi\.org/|doi:\s*)', '', doi, flags=re.IGNORECASE)
-    return doi
+    
+    # Strip trailing punctuation, markdown characters, and concatenated words
+    doi = re.sub(r'[.,;:\)\>\]\'"\s\\]+$', '', doi)
+    
+    # If trailing parenthesis exists without matching opening, trim it
+    if doi.count(')') > doi.count('('):
+        doi = doi.rstrip(')')
+
+    # Strip any trailing concatenated extensions or HTML tags
+    doi = re.sub(r'(\.html|\.pdf|\.txt|\.zip|\.xml)$', '', doi, flags=re.IGNORECASE)
+    
+    return doi.strip()
 
 def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     """
     Extract reference DOIs from full text or markdown content.
-    Returns a list of dicts with 'doi', 'url', 'context', and 'is_reference_section'.
+    Returns a list of dicts with 'doi', 'url', 'context', and 'in_reference_section'.
     """
     results = []
     seen_dois = set()
 
     lines = text.split('\n')
     
-    # Try to identify where the References section starts
     ref_section_start = False
     ref_keywords = [
         r'^#*\s*References\b', r'^#*\s*REFERENCE\b', r'^#*\s*References and Notes\b',
@@ -31,7 +40,6 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     ]
     
     for idx, line in enumerate(lines):
-        # Check if entering reference section
         for kw in ref_keywords:
             if re.search(kw, line, re.IGNORECASE):
                 ref_section_start = True
@@ -40,13 +48,13 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
         # Search for DOIs in line
         matches = re.findall(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+', line, re.IGNORECASE)
         if not matches:
-            # Also fallback to standard 10.xxx
             matches = re.findall(DOI_PATTERN, line)
 
         for match in matches:
             doi = clean_doi(match)
-            # Basic validation of DOI format
-            if doi.startswith('10.') and '/' in doi and len(doi) > 7:
+            # Basic validation: must start with 10.xxxx/
+            if doi.startswith('10.') and '/' in doi and len(doi) > 8:
+                # Discard obviously invalid DOIs (e.g. ending with non-alphanumeric trailing garbage)
                 if doi.lower() not in seen_dois:
                     seen_dois.add(doi.lower())
                     results.append({

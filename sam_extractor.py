@@ -33,14 +33,13 @@ KNOWN_SAM_SMILES = {
 
 def parse_markdown_tables(markdown_text: str) -> List[Dict[str, Any]]:
     """
-    Extract data points from Markdown tables present in Review papers.
-    Review papers often have summary tables listing 10-50+ SAM molecules and PCEs.
+    Strictly extract data points from Markdown tables present in the paper.
+    Only populates fields explicitly present in the table.
     """
     extracted_rows = []
     lines = markdown_text.split('\n')
     
     in_table = False
-    headers = []
     table_lines = []
     
     for line in lines:
@@ -55,7 +54,6 @@ def parse_markdown_tables(markdown_text: str) -> List[Dict[str, Any]]:
             if in_table:
                 in_table = False
                 if len(table_lines) >= 3:
-                    # Process accumulated Markdown table
                     rows = process_single_markdown_table(table_lines)
                     extracted_rows.extend(rows)
                 table_lines = []
@@ -67,13 +65,10 @@ def parse_markdown_tables(markdown_text: str) -> List[Dict[str, Any]]:
     return extracted_rows
 
 def process_single_markdown_table(table_lines: List[str]) -> List[Dict[str, Any]]:
-    """Process a single markdown table into SAM dataset rows."""
+    """Process a single markdown table into SAM dataset rows strictly without fake defaults."""
     results = []
-    
-    # Header line
     raw_headers = [c.strip() for c in table_lines[0].strip('|').split('|')]
     
-    # Find relevant column indices
     sam_col_idx = -1
     pce_col_idx = -1
     doi_col_idx = -1
@@ -90,7 +85,6 @@ def process_single_markdown_table(table_lines: List[str]) -> List[Dict[str, Any]
         elif any(k in h_lower for k in ['stack', 'structure', '基板', '層結構']):
             stack_col_idx = idx
 
-    # Data lines (skip header line 0 and divider line 1)
     for r_idx, row_line in enumerate(table_lines[2:], start=1):
         cols = [c.strip() for c in row_line.strip('|').split('|')]
         if len(cols) < len(raw_headers):
@@ -101,70 +95,55 @@ def process_single_markdown_table(table_lines: List[str]) -> List[Dict[str, Any]
         doi_str = cols[doi_col_idx] if doi_col_idx != -1 and doi_col_idx < len(cols) else ""
         stack_str = cols[stack_col_idx] if stack_col_idx != -1 and stack_col_idx < len(cols) else ""
 
-        # Clean SAM name
         sam_name = re.sub(r'\[\d+\]', '', sam_name).strip()
-        if not sam_name or len(sam_name) < 2 or sam_name.lower() in ['material', 'sam', 'htl', 'none']:
+        if not sam_name or len(sam_name) < 2 or sam_name.lower() in ['material', 'sam', 'htl', 'none', 'molecule']:
             continue
 
-        # Clean PCE
         pce_match = re.search(r'([12]?\d\.\d{1,2})', pce_str)
-        if not pce_match:
-            continue
-        pce_val = float(pce_match.group(1))
+        pce_val = float(pce_match.group(1)) if pce_match else ""
 
-        # Extract DOI
+        # Strictly clean DOI
         doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', doi_str + ' ' + row_line)
-        doi_val = doi_match.group(0).rstrip('.,;') if doi_match else ""
+        doi_val = ""
+        if doi_match:
+            raw_doi = doi_match.group(0)
+            doi_val = re.sub(r'[.,;:\)\>\]\'"\s]+$', '', raw_doi).strip()
 
-        # SMILES match
         smiles_val = KNOWN_SAM_SMILES.get(sam_name, "")
+
+        missing_fields = []
+        if not pce_val: missing_fields.append("PCE")
+        if not doi_val: missing_fields.append("Reference_DOI")
+
+        status_str = "完整(表格)" if not missing_fields else f"表格部分；缺:{','.join(missing_fields)}"
 
         row = {
             "ref_id": f"Table-{r_idx}-{sam_name}",
             "sam_material": sam_name,
             "smiles": smiles_val,
             "nio2": 1 if 'niox' in (stack_str + sam_name).lower() else 0,
-            "ethanol": 1,
-            "toluene": 0,
-            "ipa": 0,
-            "thf": 0,
-            "chlorobenzene": 0,
-            "methoxyethanol_2": 0,
-            "ch2cl2": 0,
-            "concentration": 0.5,
-            "wash": 1,
-            "energy_e": 0.22,
-            "cs": 0.05,
-            "fa": 0.90,
-            "ma": 0.05,
-            "pb": 1.0,
-            "sn": 0.0,
-            "i": 0.95,
-            "br": 0.05,
-            "cl": 0.0,
-            "c60": 1,
-            "bcp": 1,
-            "pc60bm": 0,
-            "pcbm": 0,
-            "pc61bm": 0,
-            "peai": 0,
-            "ald_sno2": 0,
+            "ethanol": 0, "toluene": 0, "ipa": 0, "thf": 0, "chlorobenzene": 0, "methoxyethanol_2": 0, "ch2cl2": 0,
+            "concentration": "",
+            "wash": "",
+            "energy_e": "",
+            "cs": "", "fa": "", "ma": "", "pb": "", "sn": "", "i": "", "br": "", "cl": "",
+            "c60": 1 if 'c60' in stack_str.lower() else 0,
+            "bcp": 1 if 'bcp' in stack_str.lower() else 0,
+            "pc60bm": 0, "pcbm": 0, "pc61bm": 0, "peai": 0, "ald_sno2": 0,
             "pce": pce_val,
             "reference_doi": doi_val,
-            "ref_author": "Ref Author",
-            "ref_journal": "Review Article Table",
-            "data_status": "完整(表格)",
-            "notes": f"擷取自 Review 論文 Summary Table (列 {r_idx})",
-            "confidence_colors": {
-                "energy_e": "red"
-            }
+            "ref_author": "",
+            "ref_journal": "",
+            "data_status": status_str,
+            "notes": f"抄錄自表格 (第{r_idx}列)" if doi_val else f"抄錄自表格 (第{r_idx}列)；無明示對應 DOI",
+            "confidence_colors": {}
         }
         results.append(row)
 
     return results
 
 def extract_sam_data_with_llm(markdown_text: str, api_key: str, images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Use Gemini Multimodal LLM to extract ALL SAM p-i-n perovskite solar cell data points in Review papers with NO LIMIT."""
+    """Use Gemini LLM to extract ALL SAM p-i-n perovskite solar cell data points strictly according to paper content."""
     try:
         from google import genai
         from google.genai import types
@@ -172,11 +151,15 @@ def extract_sam_data_with_llm(markdown_text: str, api_key: str, images_base64: L
         client = genai.Client(api_key=api_key)
         
         prompt = f"""
-你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據擷取專家。
-這是一篇論文（可能是綜述 Review 論文）。請無遺漏地擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點（包含所有不同分子、champion、control、不同組成與特徵組合，數量無上限！）。
+你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）數據擷取專家。
+請閱讀這篇論文，擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 
-必須依照以下 JSON 格式回傳一個完整 JSON Array（純 JSON，勿中途截斷）：
+最高原則：
+1. 絕不猜測或填入假數據！論文沒寫的欄位（如濃度、溶劑、能階差 E）必須留空（填空字串 ""），並在 Data_status 標明 "缺:欄位名"。
+2. 只有當表格或內文明確指出該數據點來自某篇參考文獻時，才填寫 Reference_DOI；切勿將主論文自己的 DOI 複製到所有參考文獻數據點。
+3. 標色規則：正文/表格文字抄錄為白（""）；讀圖或邏輯推論為紅（"red"）；無法讀取缺失為黑（"black"）。
 
+請回傳純 JSON 陣列（JSON Array）：
 [
   {{
     "ref_id": "1-MeO-2PACz(champion)",
@@ -210,18 +193,16 @@ def extract_sam_data_with_llm(markdown_text: str, api_key: str, images_base64: L
     "ald_sno2": 0,
     "pce": 22.8,
     "reference_doi": "10.1016/j.nanoen.2023.108210",
-    "ref_author": "Author et al.",
-    "ref_journal": "Journal of Materials Chemistry A",
+    "ref_author": "Ullah et al.",
+    "ref_journal": "Nano Energy",
     "data_status": "完整(全文)",
     "notes": "",
     "confidence_colors": {{
-      "energy_e": "red",
-      "wash": "red"
+      "energy_e": "red"
     }}
   }}
 ]
 
-請盡可能精準且全量擷取！
 論文內容：
 {markdown_text[:35000]}
 """
@@ -252,109 +233,54 @@ def extract_sam_data_with_llm(markdown_text: str, api_key: str, images_base64: L
     return extract_sam_data_rule_based(markdown_text)
 
 def extract_sam_data_rule_based(markdown_text: str) -> List[Dict[str, Any]]:
-    """Full-coverage rule-based heuristic parser for SAM p-i-n data extraction without artificial row caps."""
+    """Strict rule-based parser without fake default numbers or duplicated main DOIs."""
     results = []
     
-    # 1. Parse Markdown Summary Tables if present in Review papers
+    # 1. Parse Markdown Summary Tables
     table_results = parse_markdown_tables(markdown_text)
     if table_results:
         results.extend(table_results)
 
-    # 2. Extract SAM mentions from text
-    doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', markdown_text)
-    paper_doi = doi_match.group(0).rstrip('.,;') if doi_match else ""
-    
-    sam_candidates = []
-    for mol in KNOWN_SAM_SMILES.keys():
-        if re.search(r'\b' + re.escape(mol) + r'\b', markdown_text, re.IGNORECASE):
-            sam_candidates.append(mol)
+    # 2. Search for explicit SAM sentences if no table found
+    if not results:
+        sam_candidates = []
+        for mol in KNOWN_SAM_SMILES.keys():
+            if re.search(r'\b' + re.escape(mol) + r'\b', markdown_text, re.IGNORECASE):
+                sam_candidates.append(mol)
+
+        for idx, sam_name in enumerate(sam_candidates, start=1):
+            smiles_val = KNOWN_SAM_SMILES.get(sam_name, "")
             
-    general_matches = re.findall(r'\b([A-Z0-9]{2,12}-?(?:2PACz|4PACz|PACz|SAM))\b', markdown_text)
-    for g in general_matches:
-        if g not in sam_candidates:
-            sam_candidates.append(g)
+            # Find PCE near molecule name
+            pce_val = ""
+            pce_match = re.search(re.escape(sam_name) + r'[\s\S]{0,100}?(?:PCE|efficiency)\s*(?:of|=|~|:)?\s*([12]?\d\.\d{1,2})\s*%', markdown_text, re.IGNORECASE)
+            if pce_match:
+                pce_val = float(pce_match.group(1))
 
-    if not sam_candidates:
-        sam_candidates = ["MeO-2PACz", "2PACz"]
-
-    pce_matches = re.findall(r'(?:PCE|efficiency)\s*(?:of|=|~|:)?\s*([12]?\d\.\d{1,2})\s*%', markdown_text, re.IGNORECASE)
-    pces = [float(p) for p in pce_matches if 5.0 <= float(p) <= 30.0]
-    best_pce = max(pces) if pces else 21.5
-
-    ethanol = 1 if re.search(r'\bethanol\b', markdown_text, re.IGNORECASE) else 0
-    ipa = 1 if re.search(r'\bIPA\b|\bisopropanol\b', markdown_text, re.IGNORECASE) else 0
-    toluene = 1 if re.search(r'\btoluene\b', markdown_text, re.IGNORECASE) else 0
-    cb = 1 if re.search(r'\bchlorobenzene\b|\bCB\b', markdown_text, re.IGNORECASE) else 0
-    thf = 1 if re.search(r'\bTHF\b', markdown_text, re.IGNORECASE) else 0
-
-    c60 = 1 if re.search(r'\bC60\b|\bC_?60\b', markdown_text, re.IGNORECASE) else 0
-    bcp = 1 if re.search(r'\bBCP\b', markdown_text, re.IGNORECASE) else 0
-    niox = 1 if re.search(r'\bNiOx\b|\bNiO2\b', markdown_text, re.IGNORECASE) else 0
-
-    cs = 0.05 if re.search(r'\bCs\b', markdown_text) else 0.0
-    fa = 0.90 if re.search(r'\bFA\b|\bformamidinium\b', markdown_text, re.IGNORECASE) else 0.0
-    ma = 0.05 if re.search(r'\bMA\b|\bmethylammonium\b', markdown_text, re.IGNORECASE) else 0.0
-    if cs == 0.0 and fa == 0.0 and ma == 0.0:
-        fa, ma = 0.85, 0.15
-
-    # UNLIMITED: Iterate over ALL discovered SAM candidates without capping at 3!
-    seen_ids = set(r.get("sam_material", "").lower() for r in results)
-    
-    for idx, sam_name in enumerate(sam_candidates, start=1):
-        if sam_name.lower() in seen_ids:
-            continue
-        seen_ids.add(sam_name.lower())
-
-        smiles_val = KNOWN_SAM_SMILES.get(sam_name, "")
-        pce_val = best_pce if idx == 1 else max(5.0, round(best_pce - ((idx % 5) * 0.8), 2))
-        tag = "champion" if idx == 1 else f"variant_{idx}"
-        
-        row = {
-            "ref_id": f"Text-{idx}-{sam_name}({tag})",
-            "sam_material": sam_name,
-            "smiles": smiles_val,
-            "nio2": niox,
-            "ethanol": ethanol if (ethanol or ipa or toluene or cb or thf) else 1,
-            "toluene": toluene,
-            "ipa": ipa,
-            "thf": thf,
-            "chlorobenzene": cb,
-            "methoxyethanol_2": 0,
-            "ch2cl2": 0,
-            "concentration": 0.5,
-            "wash": 1,
-            "energy_e": 0.22,
-            "cs": cs,
-            "fa": fa,
-            "ma": ma,
-            "pb": 1.0,
-            "sn": 0.0,
-            "i": 0.95,
-            "br": 0.05,
-            "cl": 0.0,
-            "c60": c60 if c60 else 1,
-            "bcp": bcp if bcp else 1,
-            "pc60bm": 0,
-            "pcbm": 0,
-            "pc61bm": 0,
-            "peai": 0,
-            "ald_sno2": 0,
-            "pce": pce_val,
-            "reference_doi": paper_doi,
-            "ref_author": "Author et al.",
-            "ref_journal": "Review Article Text",
-            "data_status": "完整(全文)",
-            "notes": "wash=1由製程描述確認；E:能階相減(0.22 eV)" if idx == 1 else "wash=1由製程描述確認",
-            "confidence_colors": {
-                "energy_e": "red"
+            row = {
+                "ref_id": f"Text-{idx}-{sam_name}",
+                "sam_material": sam_name,
+                "smiles": smiles_val,
+                "nio2": 0, "ethanol": 0, "toluene": 0, "ipa": 0, "thf": 0, "chlorobenzene": 0, "methoxyethanol_2": 0, "ch2cl2": 0,
+                "concentration": "",
+                "wash": "",
+                "energy_e": "",
+                "cs": "", "fa": "", "ma": "", "pb": "", "sn": "", "i": "", "br": "", "cl": "",
+                "c60": 0, "bcp": 0, "pc60bm": 0, "pcbm": 0, "pc61bm": 0, "peai": 0, "ald_sno2": 0,
+                "pce": pce_val,
+                "reference_doi": "",
+                "ref_author": "",
+                "ref_journal": "",
+                "data_status": "內文擷取；缺:製程,E,DOI",
+                "notes": "未填 API Key 走嚴格規則模式；未明示欄位均留空",
+                "confidence_colors": {}
             }
-        }
-        results.append(row)
+            results.append(row)
 
     return results
 
 def process_paper_markdown(markdown_text: str, api_key: Optional[str] = None, images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Main extraction router for SAM paper markdown content and optional figure images."""
+    """Main extraction router for SAM paper markdown content."""
     if api_key and api_key.strip():
         return extract_sam_data_with_llm(markdown_text, api_key, images_base64)
     return extract_sam_data_rule_based(markdown_text)
