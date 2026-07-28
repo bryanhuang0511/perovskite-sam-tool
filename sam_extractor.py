@@ -34,12 +34,13 @@ KNOWN_SAM_SMILES = {
 
 SYSTEM_PROMPT = """
 你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據擷取專家。
-請閱讀論文，擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
+請閱讀論文（包含正文、表格與圖表），擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 
 最高原則：
-1. 絕不猜測或填入假數據！論文沒寫的欄位（如濃度、溶劑、能階差 E）必須留空（填空字串 ""），並在 Data_status 標明 "缺:欄位名"。
-2. 只有當表格或內文明確指出該數據點來自某篇參考文獻時，才填寫 Reference_DOI；切勿將主論文自己的 DOI 複製到所有參考文獻數據點。
-3. 標色規則：正文/表格文字抄錄為白（""）；讀圖或邏輯推論為紅（"red"）；無法讀取缺失為黑（"black"）。
+1. 若論文包含彙總表格（Summary Table，如 Table 1 / Table 2），請結合正文中關於該分子的化學結構描述、SMILES 結構式、溶劑、濃度、能階 E 與原始 Reference DOI，完整補齊所有 35 欄位！
+2. 只有當論文正文與表格確實皆未載明時，該欄位才填空字串 ""，並在 Data_status 標明 "缺:欄位名"。
+3. 只有當表格或內文明確指出該數據點來自某篇參考文獻時，才填寫 Reference_DOI。
+4. 標色規則：正文/表格文字抄錄為白（""）；讀圖或邏輯推論為紅（"red"）；無法讀取缺失為黑（"black"）。
 
 請回傳純 JSON 陣列（JSON Array）：
 [
@@ -102,7 +103,6 @@ def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: s
             img_data = base64.b64decode(img_b64)
             contents.append(types.Part.from_bytes(data=img_data, mime_type="image/png"))
 
-    # Try requested model first, then fallback models
     candidate_models = [model_name, "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-flash-latest"]
     
     last_error = None
