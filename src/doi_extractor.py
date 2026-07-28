@@ -107,10 +107,21 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                     "verification": "Direct Text Match"
                 })
 
-    # 2. Extract Reference Citation entries from References section
-    ref_pos = max(unwrapped_text.rfind("References"), unwrapped_text.rfind("REFERENCES"))
-    ref_block = unwrapped_text[ref_pos:] if ref_pos != -1 else unwrapped_text[int(len(unwrapped_text)*0.5):]
+    # 2. Locate the real References section header in the tail 40% of paper text
+    search_start = int(len(unwrapped_text) * 0.6)
+    tail_text = unwrapped_text[search_start:]
+    pos_in_tail = max(
+        tail_text.find("\nReferences"),
+        tail_text.find("References\n"),
+        tail_text.find("\nREFERENCES"),
+        tail_text.find("REFERENCES\n")
+    )
+    if pos_in_tail != -1:
+        ref_block = unwrapped_text[search_start + pos_in_tail:]
+    else:
+        ref_block = unwrapped_text[search_start:]
 
+    # 3. Extract Reference Citation entries from the References section
     raw_splits = re.split(r'(?:\n|^|\b)(?:\[\d{1,3}\]|\(\d{1,3}\)|\b\d{1,3}\.)\s+', ref_block)
     
     valid_entries = []
@@ -119,8 +130,8 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
         if len(clean_ref) >= 15:
             valid_entries.append((idx, clean_ref[:250]))
 
-    # Perform Concurrent API requests with 40 parallel workers
-    with ThreadPoolExecutor(max_workers=40) as executor:
+    # Perform Concurrent API requests with 50 parallel workers
+    with ThreadPoolExecutor(max_workers=50) as executor:
         future_to_entry = {}
         for idx, clean_ref in valid_entries:
             doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
@@ -141,7 +152,7 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                 future_to_entry[future] = (idx, clean_ref)
 
         try:
-            for future in as_completed(future_to_entry, timeout=6.0):
+            for future in as_completed(future_to_entry, timeout=5.5):
                 try:
                     res_obj = future.result()
                     if res_obj and res_obj.get("doi"):
@@ -180,8 +191,18 @@ def extract_all_reference_dois_with_ai(
 
     client = genai.Client(api_key=api_key)
     
-    ref_pos = max(paper_text.rfind("References"), paper_text.rfind("REFERENCES"))
-    ref_text_block = paper_text[ref_pos:] if ref_pos != -1 else paper_text[int(len(paper_text)*0.5):]
+    search_start = int(len(paper_text) * 0.6)
+    tail_text = paper_text[search_start:]
+    pos_in_tail = max(
+        tail_text.find("\nReferences"),
+        tail_text.find("References\n"),
+        tail_text.find("\nREFERENCES"),
+        tail_text.find("REFERENCES\n")
+    )
+    if pos_in_tail != -1:
+        ref_text_block = paper_text[search_start + pos_in_tail:]
+    else:
+        ref_text_block = paper_text[search_start:]
     
     prompt = f"""
 你是頂尖學術參考文獻 DOI 提取專家。
