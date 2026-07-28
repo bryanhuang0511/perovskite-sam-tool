@@ -5,7 +5,6 @@ from typing import List, Dict, Any
 def clean_doi(raw_doi: str) -> str:
     """Clean and normalize an extracted DOI string."""
     doi = raw_doi.strip()
-    
     doi = re.sub(r'^(https?://(?:dx\.)?doi\.org/|doi:\s*|doi/abs/|doi/full/|doi/pdf/)', '', doi, flags=re.IGNORECASE)
     doi = re.sub(r'[.,;:\)\>\]\'"\s\\]+$', '', doi)
     
@@ -16,7 +15,7 @@ def clean_doi(raw_doi: str) -> str:
     return doi.strip()
 
 def resolve_citation_str_to_doi(citation_str: str) -> str:
-    """Resolve a reference citation string (Authors, Journal, Year, Volume) to exact DOI via Crossref API."""
+    """Resolve a reference citation string to exact DOI via Crossref API."""
     try:
         url = "https://api.crossref.org/works"
         params = {"query.bibliographic": citation_str[:160], "rows": 1}
@@ -32,50 +31,14 @@ def resolve_citation_str_to_doi(citation_str: str) -> str:
 
 def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     """
-    Extract reference DOIs from full text or markdown content.
-    Combines direct 10.xxxx regex parsing and Crossref bibliographic resolution for citations without explicit DOIs.
+    Extract reference DOIs from full text or markdown content with line-break & line-wrap resilience.
     """
     results = []
     seen_dois = set()
 
-    # Pre-process text to join line breaks in DOIs
-    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]+?)-\s*\n\s*([^\s]+)', r'\1\2', text)
-    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]*?)\s*\n\s*([a-zA-Z0-9.\-_/;()]+)', r'\1\2', unwrapped_text)
-
-    lines = unwrapped_text.split('\n')
-    
-    ref_section_start = False
-    ref_keywords = [
-        r'^#*\s*References\b', r'^#*\s*REFERENCE\b', r'^#*\s*References and Notes\b',
-        r'^#*\s*Literature Cited\b', r'^#*\s*Bibliography\b', r'^#*\s*文獻\b', r'^#*\s*參考文獻\b'
-    ]
-    
-    pattern = r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+'
-
-    # 1. Direct Regex Match (Line-by-line)
-    for idx, line in enumerate(lines):
-        for kw in ref_keywords:
-            if re.search(kw, line, re.IGNORECASE):
-                ref_section_start = True
-                break
-
-        matches = re.findall(pattern, line, re.IGNORECASE)
-        for match in matches:
-            doi = clean_doi(match)
-            if doi.startswith('10.') and '/' in doi and len(doi) > 7:
-                if doi.lower() not in seen_dois:
-                    seen_dois.add(doi.lower())
-                    results.append({
-                        "doi": doi,
-                        "url": f"https://doi.org/{doi}",
-                        "line_number": idx + 1,
-                        "context": line.strip()[:200],
-                        "in_reference_section": ref_section_start
-                    })
-
-    # 2. Global Regex Match across entire text
-    global_matches = re.findall(r'\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b', unwrapped_text)
-    for match in global_matches:
+    # 1. Direct Regex Match across entire text (captures all 10.xxxx/xxxx)
+    direct_matches = re.findall(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+', text, re.IGNORECASE)
+    for match in direct_matches:
         doi = clean_doi(match)
         if doi.startswith('10.') and '/' in doi and len(doi) > 7:
             if doi.lower() not in seen_dois:
@@ -83,30 +46,45 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                 results.append({
                     "doi": doi,
                     "url": f"https://doi.org/{doi}",
-                    "line_number": 1,
-                    "context": "Full text extract",
+                    "line_number": len(results) + 1,
+                    "context": match[:150],
                     "in_reference_section": True
                 })
 
-    # 3. Reference Citation Parsing & Crossref Resolution (If fewer than 5 explicit DOIs found)
-    if len(results) < 10:
-        ref_entries = re.findall(r'(?:^|\n)(?:\(\d+\)|\[\d+\]|\d+\.)\s+([^\n]+(?:\n[^\(\[\d\n]+)*)', unwrapped_text)
-        for idx, ref_text in enumerate(ref_entries[:45], start=1):
-            clean_ref = re.sub(r'\s+', ' ', ref_text.strip())
-            if len(clean_ref) < 15:
-                continue
-                
-            doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
-            found_doi = clean_doi(doi_match.group(0)) if doi_match else resolve_citation_str_to_doi(clean_ref)
+    # 2. Reference Citation Parsing (Handles (1), [1], 1. citations whether separated by newlines OR spaces!)
+    # Matches citation numbers like (1) Author..., [2] Author..., 3. Author...
+    ref_entries = re.findall(r'(?:\(\d{1,3}\)|\[\d{1,3}\]|\b\d{1,3}\.)\s+([A-Z][a-zA-Z\s.,;\-\'\"]{10,250}?)(?=(?:\(\d{1,3}\)|\[\d{1,3}\]|\b\d{1,3}\.)|\Z)', text)
+    
+    if not ref_entries:
+        # Fallback regex splitting by year (e.g. 2023, 2024, 2025)
+        ref_entries = re.findall(r'([A-Z][a-z]+,?\s+[A-Z]\.[\s\S]{10,200}?(?:19|20)\d{2}[^\.\n]*\.)', text)
+
+    for idx, ref_text in enumerate(ref_entries[:50], start=1):
+        clean_ref = re.sub(r'\s+', ' ', ref_text.strip())
+        if len(clean_ref) < 15 or "Figure" in clean_ref or "Table" in clean_ref:
+            continue
             
-            if found_doi and found_doi.lower() not in seen_dois:
-                seen_dois.add(found_doi.lower())
-                results.append({
-                    "doi": found_doi,
-                    "url": f"https://doi.org/{found_doi}",
-                    "line_number": idx,
-                    "context": clean_ref[:200],
-                    "in_reference_section": True
-                })
+        doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
+        found_doi = clean_doi(doi_match.group(0)) if doi_match else resolve_citation_str_to_doi(clean_ref)
+        
+        if found_doi and found_doi.lower() not in seen_dois:
+            seen_dois.add(found_doi.lower())
+            results.append({
+                "doi": found_doi,
+                "url": f"https://doi.org/{found_doi}",
+                "line_number": idx,
+                "context": clean_ref[:150],
+                "in_reference_section": True
+            })
 
     return results
+
+if __name__ == "__main__":
+    test_single_line = """
+    Header DOI: 10.1021/acs.jpclett.6c00119.
+    References: (1) Meftahi, N. Machine Learning Enhanced High-Throughput Fabrication. ADVANCED ENERGY MATERIALS 2023, 13, 2370154. (2) Yu, Y.; Tan, X.; Ning, S. ACS Energy Lett. 2019, 4, 397-404. (3) Hartono, N. T. P. Nat. Commun. 2020, 11, 4172.
+    """
+    extracted = extract_dois_from_text(test_single_line)
+    print(f"Extracted {len(extracted)} DOIs from single-line text:")
+    for d in extracted:
+        print(f" - #{d['line_number']}: {d['doi']} ({d['context'][:60]}...)")

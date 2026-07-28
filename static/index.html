@@ -386,7 +386,7 @@
 
         th.hdr-gray { background-color: #D0CECE; color: #1e293b; }
         th.hdr-orange { background-color: #FBE5D6; color: #1e293b; }
-        th.hdr-green { background-color: #E2F0D9; color: #1e293b; }
+        th.hdr-green { background-color: #FFE2F0D9; color: #1e293b; }
         th.hdr-blue { background-color: #DAE3F3; color: #1e293b; }
         th.hdr-bluegray { background-color: #D6DCE5; color: #1e293b; }
         th.hdr-yellow { background-color: #FFF2CC; color: #1e293b; }
@@ -659,7 +659,21 @@
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = textContent.items.map(item => item.str).join(' ');
+                let pageText = "";
+                let lastY = null;
+                for (const item of textContent.items) {
+                    if (!item.str) continue;
+                    const currentY = item.transform ? item.transform[5] : null;
+                    if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 4) {
+                        pageText += "\n";
+                    } else if (item.hasEOL) {
+                        pageText += "\n";
+                    } else if (pageText && !pageText.endsWith("\n") && !pageText.endsWith(" ")) {
+                        pageText += " ";
+                    }
+                    pageText += item.str;
+                    if (currentY !== null) lastY = currentY;
+                }
                 fullText += `\n## Page ${i}\n` + pageText;
             }
             return fullText;
@@ -796,7 +810,6 @@
             document.getElementById('samCountBadge').innerText = currentExtractedData.sam_data.length;
             document.getElementById('doiCountBadge').innerText = currentExtractedData.dois.length;
 
-            // Render Token Usage Dashboard
             const tokenDashboard = document.getElementById('tokenDashboard');
             const usage = currentExtractedData.usage_info || {};
             if (usage.total_tokens || usage.input_tokens) {
