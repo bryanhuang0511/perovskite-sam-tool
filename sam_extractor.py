@@ -3,7 +3,7 @@ import json
 import os
 import base64
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 COLUMN_KEYS = [
     "ref_id", "sam_material", "smiles", "nio2",
@@ -87,13 +87,12 @@ SYSTEM_PROMPT = """
 ]
 """
 
-def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Extract SAM data using Google Gemini API with 100% full paper markdown content."""
+def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Extract SAM data using Google Gemini API and collect token usage metadata."""
     from google import genai
     from google.genai import types
     
     client = genai.Client(api_key=api_key)
-    # Pass 100% full paper markdown text without any artificial string truncation
     prompt = SYSTEM_PROMPT + f"\n\n論文 100% 全文內容：\n{markdown_text}"
     contents = [prompt]
     
@@ -121,13 +120,27 @@ def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: s
                 ),
             )
             parsed = json.loads(response.text)
+
+            # Collect token usage
+            usage_info = {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+                "model_used": target_m,
+                "provider": "google-gemini"
+            }
+            if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                usage_info["input_tokens"] = getattr(response.usage_metadata, 'prompt_token_count', 0)
+                usage_info["output_tokens"] = getattr(response.usage_metadata, 'candidates_token_count', 0)
+                usage_info["total_tokens"] = getattr(response.usage_metadata, 'total_token_count', 0)
+
             if isinstance(parsed, list):
-                print(f"[Gemini API] Success with model {target_m}! Extracted {len(parsed)} items.")
-                return parsed
+                print(f"[Gemini API] Success with model {target_m}! Extracted {len(parsed)} items. Tokens: {usage_info}")
+                return parsed, usage_info
             elif isinstance(parsed, dict):
                 for v in parsed.values():
                     if isinstance(v, list):
-                        return v
+                        return v, usage_info
         except Exception as e:
             print(f"[Gemini API] Model {target_m} failed: {e}")
             last_error = e
@@ -139,8 +152,8 @@ def extract_sam_data_with_openai_compatible(
     api_key: str,
     model_name: str = "gpt-4o-mini",
     api_base: str = "https://api.openai.com/v1"
-) -> List[Dict[str, Any]]:
-    """Extract SAM data using OpenAI-compatible API with 100% full paper text."""
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Extract SAM data using OpenAI-compatible API and collect token usage metadata."""
     url = f"{api_base.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -164,13 +177,22 @@ def extract_sam_data_with_openai_compatible(
         content_clean = re.sub(r'^```json\s*', '', content.strip(), flags=re.IGNORECASE)
         content_clean = re.sub(r'\s*```$', '', content_clean).strip()
         
+        usage = res_json.get('usage', {})
+        usage_info = {
+            "input_tokens": usage.get('prompt_tokens', 0),
+            "output_tokens": usage.get('completion_tokens', 0),
+            "total_tokens": usage.get('total_tokens', 0),
+            "model_used": model_name,
+            "provider": "openai-compatible"
+        }
+
         parsed = json.loads(content_clean)
         if isinstance(parsed, list):
-            return parsed
+            return parsed, usage_info
         elif isinstance(parsed, dict):
             for v in parsed.values():
                 if isinstance(v, list):
-                    return v
+                    return v, usage_info
     else:
         raise RuntimeError(f"OpenAI 相容 API 錯誤 ({resp.status_code}): {resp.text[:200]}")
 
@@ -281,7 +303,7 @@ def process_single_markdown_table(table_lines: List[str]) -> List[Dict[str, Any]
 
     return results
 
-def extract_sam_data_rule_based(markdown_text: str) -> List[Dict[str, Any]]:
+def extract_sam_data_rule_based(markdown_text: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Strict rule-based parser without fake default numbers or duplicated main DOIs."""
     results = []
     
@@ -323,7 +345,15 @@ def extract_sam_data_rule_based(markdown_text: str) -> List[Dict[str, Any]]:
             }
             results.append(row)
 
-    return results
+    usage_info = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "model_used": "Rule-based Engine (No API Key)",
+        "provider": "local"
+    }
+
+    return results, usage_info
 
 def process_paper_markdown(
     markdown_text: str,
@@ -331,16 +361,21 @@ def process_paper_markdown(
     images_base64: List[str] = None,
     provider: str = "gemini",
     model_name: str = "gemini-3.6-flash",
-    api_base: str = "https://api.openai.com/v1"
-) -> List[Dict[str, Any]]:
-    """Main extraction router supporting Gemini (3.6/3.1/2.0), OpenAI, DeepSeek, Ollama, OpenRouter, and Custom APIs."""
+    api_base: str = "https://api.openai.com/v1",
+    return_usage: bool = False
+) -> Union[List[Dict[str, Any]], Tuple[List[Dict[str, Any]], Dict[str, Any]]]:
+    """Main extraction router supporting Gemini, OpenAI, DeepSeek, Ollama, OpenRouter, and Custom APIs."""
     if api_key and api_key.strip():
         if provider == "openai" or provider == "deepseek" or provider == "custom":
             base_url = api_base if api_base and api_base.strip() else ("https://api.deepseek.com/v1" if provider == "deepseek" else "https://api.openai.com/v1")
             target_model = model_name if model_name and model_name.strip() else ("deepseek-chat" if provider == "deepseek" else "gpt-4o-mini")
-            return extract_sam_data_with_openai_compatible(markdown_text, api_key.strip(), target_model, base_url)
+            data_rows, usage_info = extract_sam_data_with_openai_compatible(markdown_text, api_key.strip(), target_model, base_url)
         else:
             target_model = model_name.strip() if model_name and model_name.strip() else "gemini-3.6-flash"
-            return extract_sam_data_with_gemini(markdown_text, api_key.strip(), target_model, images_base64)
-            
-    return extract_sam_data_rule_based(markdown_text)
+            data_rows, usage_info = extract_sam_data_with_gemini(markdown_text, api_key.strip(), target_model, images_base64)
+    else:
+        data_rows, usage_info = extract_sam_data_rule_based(markdown_text)
+
+    if return_usage:
+        return data_rows, usage_info
+    return data_rows

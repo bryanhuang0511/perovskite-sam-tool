@@ -12,7 +12,6 @@ from excel_exporter import generate_sam_excel
 
 app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1.0.0")
 
-# Mount static folder
 os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -23,30 +22,31 @@ def index():
 
 @app.post("/api/extract-text-sam")
 async def extract_text_sam(payload: dict):
-    """Extract SAM dataset and DOI references directly from text/markdown payload supporting multiple LLM providers."""
+    """Extract SAM dataset and DOI references directly from text/markdown payload supporting multiple LLM providers and Token Usage metadata."""
     markdown_text = payload.get("markdown", "")
     filename = payload.get("filename", "paper.pdf")
     api_key = payload.get("api_key", None)
     images_base64 = payload.get("images", [])
     
     provider = payload.get("provider", "gemini")
-    model_name = payload.get("model_name", "gemini-2.5-flash")
+    model_name = payload.get("model_name", "gemini-3.6-flash")
     api_base = payload.get("api_base", "https://api.openai.com/v1")
     
     if not markdown_text.strip():
         raise HTTPException(status_code=400, detail="未收到論文文字內容。")
 
-    # Extract Reference DOIs
+    # Extract Reference DOIs with Crossref citation resolution
     dois = extract_dois_from_text(markdown_text)
     
     # Extract SAM p-i-n perovskite dataset features
-    sam_data = process_paper_markdown(
+    sam_data, usage_info = process_paper_markdown(
         markdown_text,
         api_key=api_key,
         images_base64=images_base64,
         provider=provider,
         model_name=model_name,
-        api_base=api_base
+        api_base=api_base,
+        return_usage=True
     )
     
     return JSONResponse(content={
@@ -55,13 +55,16 @@ async def extract_text_sam(payload: dict):
         "sam_data": sam_data,
         "dois": dois,
         "doi_count": len(dois),
-        "sam_count": len(sam_data)
+        "sam_count": len(sam_data),
+        "usage_info": usage_info
     })
 
 @app.post("/api/convert-and-extract")
 async def convert_and_extract(
     file: UploadFile = File(...),
-    api_key: str = Form(None)
+    api_key: str = Form(None),
+    provider: str = Form("gemini"),
+    model_name: str = Form("gemini-3.6-flash")
 ):
     """Fallback multipart PDF upload endpoint."""
     if not file.filename.lower().endswith(".pdf"):
@@ -90,7 +93,13 @@ async def convert_and_extract(
             markdown_text = f"# {file.filename}\n\n(無法提取 PDF 文字層)"
 
         dois = extract_dois_from_text(markdown_text)
-        sam_data = process_paper_markdown(markdown_text, api_key=api_key)
+        sam_data, usage_info = process_paper_markdown(
+            markdown_text,
+            api_key=api_key,
+            provider=provider,
+            model_name=model_name,
+            return_usage=True
+        )
         
         return JSONResponse(content={
             "filename": file.filename,
@@ -98,7 +107,8 @@ async def convert_and_extract(
             "sam_data": sam_data,
             "dois": dois,
             "doi_count": len(dois),
-            "sam_count": len(sam_data)
+            "sam_count": len(sam_data),
+            "usage_info": usage_info
         })
 
     finally:

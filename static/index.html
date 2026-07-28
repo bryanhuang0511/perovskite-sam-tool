@@ -169,6 +169,58 @@
             display: none;
         }
 
+        /* Token Dashboard Card */
+        .token-dashboard-card {
+            display: none;
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.9) 0%, rgba(15, 23, 42, 0.9) 100%);
+            border: 1px solid var(--accent-teal);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 15px rgba(20, 184, 166, 0.15);
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .token-info-group {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .token-stat {
+            display: flex;
+            flex-direction: column;
+            gap: 0.1rem;
+        }
+
+        .token-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .token-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: #38bdf8;
+        }
+
+        .token-model-badge {
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid var(--accent-primary);
+            color: #818cf8;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
         .status-banner {
             display: none;
             background: var(--bg-card);
@@ -469,6 +521,26 @@
             <div class="status-text" id="statusText">正在讀取 PDF 內文與數據點...</div>
         </div>
 
+        <!-- Token Usage Dashboard Card -->
+        <div class="token-dashboard-card" id="tokenDashboard">
+            <div class="token-info-group">
+                <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-teal);">⚡ AI Token 儀表板</div>
+                <div class="token-stat">
+                    <span class="token-label">輸入 (Input Tokens)</span>
+                    <span class="token-value" id="tokenInput">0</span>
+                </div>
+                <div class="token-stat">
+                    <span class="token-label">輸出 (Output Tokens)</span>
+                    <span class="token-value" id="tokenOutput">0</span>
+                </div>
+                <div class="token-stat">
+                    <span class="token-label">總計 (Total Tokens)</span>
+                    <span class="token-value" id="tokenTotal" style="color:#34d399;">0</span>
+                </div>
+            </div>
+            <div class="token-model-badge" id="tokenModelUsed">model: gemini-3.6-flash</div>
+        </div>
+
         <div class="tabs-container" id="tabsContainer">
             <div class="tab-buttons">
                 <div class="tab-group">
@@ -524,7 +596,8 @@
             filename: "",
             markdown: "",
             sam_data: [],
-            dois: []
+            dois: [],
+            usage_info: {}
         };
 
         const apiKeyInput = document.getElementById('apiKey');
@@ -600,10 +673,12 @@
 
             const statusBanner = document.getElementById('statusBanner');
             const tabsContainer = document.getElementById('tabsContainer');
+            const tokenDashboard = document.getElementById('tokenDashboard');
             const statusText = document.getElementById('statusText');
 
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
+            tokenDashboard.style.display = 'none';
             statusText.innerText = `正在讀取 ${file.name} 內文並透過 AI 提取數據點與純文字 DOI 列表...`;
 
             try {
@@ -720,6 +795,19 @@
         function renderResults() {
             document.getElementById('samCountBadge').innerText = currentExtractedData.sam_data.length;
             document.getElementById('doiCountBadge').innerText = currentExtractedData.dois.length;
+
+            // Render Token Usage Dashboard
+            const tokenDashboard = document.getElementById('tokenDashboard');
+            const usage = currentExtractedData.usage_info || {};
+            if (usage.total_tokens || usage.input_tokens) {
+                document.getElementById('tokenInput').innerText = (usage.input_tokens || 0).toLocaleString();
+                document.getElementById('tokenOutput').innerText = (usage.output_tokens || 0).toLocaleString();
+                document.getElementById('tokenTotal').innerText = (usage.total_tokens || 0).toLocaleString();
+                document.getElementById('tokenModelUsed').innerText = `model: ${usage.model_used || 'gemini-3.6-flash'}`;
+                tokenDashboard.style.display = 'flex';
+            } else {
+                tokenDashboard.style.display = 'none';
+            }
 
             const headerTr = document.getElementById('samTableHeader');
             headerTr.innerHTML = HEADER_CONFIG.map(h => `<th class="${h.class}">${h.label}</th>`).join('');
