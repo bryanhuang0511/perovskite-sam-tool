@@ -26,6 +26,27 @@ NO_CACHE_HEADERS = {
     "Expires": "0"
 }
 
+def safe_truncate_paper_text(text: str, max_chars: int = 55000) -> str:
+    """Intelligently compress ultra-long paper text to fit within Vercel Serverless 10s & Memory limits."""
+    if len(text) <= max_chars:
+        return text
+    
+    search_start = int(len(text) * 0.6)
+    tail_text = text[search_start:]
+    pos_in_tail = max(
+        tail_text.find("\nReferences"),
+        tail_text.find("References\n"),
+        tail_text.find("\nREFERENCES"),
+        tail_text.find("REFERENCES\n")
+    )
+    if pos_in_tail != -1:
+        ref_start_pos = search_start + pos_in_tail
+        head_part = text[:30000]
+        tail_part = text[ref_start_pos:]
+        return head_part + "\n\n...[已壓縮中間正文以優化 Vercel 雲端效能]...\n\n" + tail_part
+    
+    return text[:35000] + "\n\n...[已壓縮超長內文]...\n\n" + text[-20000:]
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     html_path = os.path.join(static_dir, "index.html")
@@ -40,81 +61,88 @@ async def extract_text_sam(payload: dict):
     Extract SAM dataset and DOI references directly from text/markdown payload.
     Stateless & Fresh Execution Guarantee (No Memory Retention).
     """
-    markdown_text = payload.get("markdown", "")
-    filename = payload.get("filename", "paper.pdf")
-    api_key = payload.get("api_key", None)
-    images_base64 = payload.get("images", [])
-    
-    provider = payload.get("provider", "gemini")
-    model_name = payload.get("model_name", "gemini-3.6-flash")
-    api_base = payload.get("api_base", "https://api.openai.com/v1")
-    
-    if not markdown_text.strip():
-        raise HTTPException(status_code=400, detail="未收到論文文字內容。")
+    try:
+        raw_markdown = payload.get("markdown", "")
+        filename = payload.get("filename", "paper.pdf")
+        api_key = payload.get("api_key", None)
+        images_base64 = payload.get("images", [])
+        
+        provider = payload.get("provider", "gemini")
+        model_name = payload.get("model_name", "gemini-3.6-flash")
+        api_base = payload.get("api_base", "https://api.openai.com/v1")
+        
+        if not raw_markdown.strip():
+            raise HTTPException(status_code=400, detail="未收到論文文字內容。")
 
-    # Step 1: Tool-based High-Precision DOI Extraction (0 Tokens consumed!)
-    dois = extract_dois_from_text(markdown_text)
-    seen_dois = {d["doi"].lower() for d in dois}
+        # Compress text safely for Vercel Serverless stability
+        markdown_text = safe_truncate_paper_text(raw_markdown)
 
-    # Step 2: AI SAM Dataset Feature Extraction with Fresh Stateless Memory-Wipe Guarantee
-    res_dict, usage_info = process_paper_markdown(
-        markdown_text,
-        api_key=api_key,
-        images_base64=images_base64,
-        provider=provider,
-        model_name=model_name,
-        api_base=api_base,
-        return_usage=True
-    )
+        # Step 1: Tool-based High-Precision DOI Extraction (0 Tokens consumed!)
+        dois = extract_dois_from_text(markdown_text)
+        seen_dois = {d["doi"].lower() for d in dois}
 
-    sam_data = res_dict.get("sam_dataset", [])
-    ai_dois = res_dict.get("reference_dois", [])
+        # Step 2: AI SAM Dataset Feature Extraction with Fresh Stateless Memory-Wipe Guarantee
+        res_dict, usage_info = process_paper_markdown(
+            markdown_text,
+            api_key=api_key,
+            images_base64=images_base64,
+            provider=provider,
+            model_name=model_name,
+            api_base=api_base,
+            return_usage=True
+        )
 
-    # Step 3: If API Key is present, run AI Full-Reference DOI Engine to return ALL 140+ DOIs in 1 pass!
-    if api_key and api_key.strip():
-        try:
-            ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
-            if len(ai_all) > len(dois):
-                dois = ai_all
-                seen_dois = {d["doi"].lower() for d in dois}
-        except Exception as e:
-            print(f"[AI All DOIs Error]: {e}")
+        sam_data = res_dict.get("sam_dataset", [])
+        ai_dois = res_dict.get("reference_dois", [])
 
-    # Merge any extra AI-discovered DOIs
-    for ai_item in ai_dois:
-        if isinstance(ai_item, dict):
-            doi_val = clean_doi(ai_item.get("doi", ""))
-            ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
-        else:
-            doi_val = clean_doi(str(ai_item))
-            ctx_val = f"AI 特徵擷取 ({model_name})"
+        # Step 3: If API Key is present, run AI Full-Reference DOI Engine to return ALL 140+ DOIs in 1 pass!
+        if api_key and api_key.strip():
+            try:
+                ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
+                if len(ai_all) > len(dois):
+                    dois = ai_all
+                    seen_dois = {d["doi"].lower() for d in dois}
+            except Exception as e:
+                print(f"[AI All DOIs Error]: {e}")
 
-        if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
-            seen_dois.add(doi_val.lower())
-            dois.append({
-                "doi": doi_val,
-                "url": f"https://doi.org/{doi_val}",
-                "line_number": len(dois) + 1,
-                "context": ctx_val,
-                "in_reference_section": True,
-                "verification": "AI Extracted"
-            })
+        # Merge any extra AI-discovered DOIs
+        for ai_item in ai_dois:
+            if isinstance(ai_item, dict):
+                doi_val = clean_doi(ai_item.get("doi", ""))
+                ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
+            else:
+                doi_val = clean_doi(str(ai_item))
+                ctx_val = f"AI 特徵擷取 ({model_name})"
 
-    # Step 4: Add verification badges if not already present
-    for d in dois:
-        if "ai_status" not in d:
-            d["ai_verified"] = True
-            d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
+            if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
+                seen_dois.add(doi_val.lower())
+                dois.append({
+                    "doi": doi_val,
+                    "url": f"https://doi.org/{doi_val}",
+                    "line_number": len(dois) + 1,
+                    "context": ctx_val,
+                    "in_reference_section": True,
+                    "verification": "AI Extracted"
+                })
 
-    return JSONResponse(content={
-        "filename": filename,
-        "markdown": markdown_text,
-        "sam_data": sam_data,
-        "dois": dois,
-        "doi_count": len(dois),
-        "sam_count": len(sam_data),
-        "usage_info": usage_info
-    }, headers=NO_CACHE_HEADERS)
+        # Step 4: Add verification badges if not already present
+        for d in dois:
+            if "ai_status" not in d:
+                d["ai_verified"] = True
+                d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
+
+        return JSONResponse(content={
+            "filename": filename,
+            "markdown": markdown_text,
+            "sam_data": sam_data,
+            "dois": dois,
+            "doi_count": len(dois),
+            "sam_count": len(sam_data),
+            "usage_info": usage_info
+        }, headers=NO_CACHE_HEADERS)
+    except Exception as e:
+        print(f"[API Error in extract-text-sam]: {e}")
+        return JSONResponse(status_code=500, content={"detail": f"處理論文時發生錯誤: {str(e)}"}, headers=NO_CACHE_HEADERS)
 
 @app.post("/api/convert-and-extract")
 async def convert_and_extract(
@@ -148,6 +176,8 @@ async def convert_and_extract(
 
         if not markdown_text.strip():
             markdown_text = f"# {file.filename}\n\n(無法提取 PDF 文字層)"
+
+        markdown_text = safe_truncate_paper_text(markdown_text)
 
         dois = extract_dois_from_text(markdown_text)
         seen_dois = {d["doi"].lower() for d in dois}
@@ -205,6 +235,10 @@ async def convert_and_extract(
             "sam_count": len(sam_data),
             "usage_info": usage_info
         }, headers=NO_CACHE_HEADERS)
+
+    except Exception as e:
+        print(f"[API Error in convert-and-extract]: {e}")
+        return JSONResponse(status_code=500, content={"detail": f"處理論文時發生錯誤: {str(e)}"}, headers=NO_CACHE_HEADERS)
 
     finally:
         if os.path.exists(temp_pdf_path):
