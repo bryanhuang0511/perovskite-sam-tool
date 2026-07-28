@@ -7,7 +7,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <!-- PDF.js CDN for fast client-side PDF text extraction -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         :root {
@@ -20,12 +19,7 @@
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --border-color: #334155;
-            --cell-red-bg: #ffe4e6;
-            --cell-red-text: #9f1239;
-            --cell-black-bg: #090d16;
-            --cell-black-text: #f8fafc;
             --glass-bg: rgba(30, 41, 59, 0.75);
-            --glass-border: rgba(255, 255, 255, 0.1);
         }
 
         * {
@@ -332,6 +326,7 @@
         td.cell-black { background-color: #000000 !important; color: #ffffff !important; font-weight: 500; }
         td.cell-white { background-color: #ffffff !important; color: #0f172a !important; }
 
+        /* DOI List View */
         .doi-list {
             display: flex;
             flex-direction: column;
@@ -354,19 +349,16 @@
         .doi-info {
             display: flex;
             flex-direction: column;
-            gap: 0.2rem;
+            gap: 0.3rem;
         }
 
-        .doi-str {
+        .doi-pure-text {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.95rem;
-            font-weight: 600;
+            font-size: 1.05rem;
+            font-weight: 700;
             color: #38bdf8;
-            text-decoration: none;
-        }
-
-        .doi-str:hover {
-            text-decoration: underline;
+            letter-spacing: 0.5px;
+            user-select: all;
         }
 
         .doi-context {
@@ -376,6 +368,11 @@
             overflow: hidden;
             text-overflow: ellipsis;
             max-width: 900px;
+        }
+
+        .doi-btn-group {
+            display: flex;
+            gap: 0.5rem;
         }
 
         .markdown-view {
@@ -419,7 +416,7 @@
     <header>
         <div class="logo-group">
             <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
-            <p>PDF 自動轉 Markdown (MarkItDown) ➔ 35 欄位 SAM p-i-n 結構特徵擷取 ➔ DOI 文獻提取</p>
+            <p>PDF 自動轉 Markdown ➔ 35 欄位 SAM p-i-n 結構特徵擷取 ➔ 純文字 Reference DOI 清單</p>
         </div>
         <div class="header-actions">
             <div class="api-key-input-group">
@@ -433,7 +430,7 @@
         <div class="upload-card" id="dropZone">
             <div class="upload-icon">📄</div>
             <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
-            <div class="upload-subtitle">支援各種 SAM 鈣鈦礦太陽能電池論文 PDF (轉換後自動提取數據與 DOI 列表)</div>
+            <div class="upload-subtitle">支援各種 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
             <input type="file" id="fileInput" accept=".pdf" />
         </div>
 
@@ -449,7 +446,7 @@
                         📊 SAM 數據集表格 <span class="tab-badge" id="samCountBadge">0</span>
                     </button>
                     <button class="tab-btn" onclick="switchTab('doiTab')">
-                        🔗 Reference DOI 列表 <span class="tab-badge" id="doiCountBadge">0</span>
+                        🔗 Reference DOI 純文字清單 <span class="tab-badge" id="doiCountBadge">0</span>
                     </button>
                     <button class="tab-btn" onclick="switchTab('mdTab')">
                         📝 Markdown 原文預覽
@@ -476,6 +473,7 @@
                 </div>
             </div>
 
+            <!-- Tab 2: Clean Pure Reference DOIs -->
             <div class="tab-content" id="doiTab">
                 <div class="doi-list" id="doiList"></div>
             </div>
@@ -529,7 +527,6 @@
             }
         });
 
-        // Fast Client-side PDF Text Extraction
         async function extractPdfTextClientSide(file) {
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -555,21 +552,18 @@
 
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
-            statusText.innerText = `正在讀取 ${file.name} 內文並進行數據擷取...`;
+            statusText.innerText = `正在讀取 ${file.name} 內文並提取數據點與純文字 DOI 列表...`;
 
             try {
                 let markdownText = "";
-                
-                // 1. Client-side PDF text extraction
                 try {
                     markdownText = await extractPdfTextClientSide(file);
                 } catch (pdfErr) {
-                    console.warn('Browser PDF text extraction failed, falling back to server:', pdfErr);
+                    console.warn('Browser PDF text extraction failed:', pdfErr);
                 }
 
                 let response;
                 if (markdownText && markdownText.trim().length > 100) {
-                    // Fast Payload via JSON text (Bypasses Vercel 4.5MB upload limit!)
                     response = await fetch('/api/extract-text-sam', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -580,7 +574,6 @@
                         })
                     });
                 } else {
-                    // Multipart Fallback
                     const formData = new FormData();
                     formData.append('file', file);
                     if (apiKeyInput.value.trim()) {
@@ -599,9 +592,7 @@
                         const errJson = JSON.parse(errorText);
                         msg = errJson.detail || errJson.message || msg;
                     } catch (e) {
-                        if (response.status === 413) msg = 'PDF 檔案過大 (超過 Vercel 雲端檔案限制)，請在本機運行或壓縮 PDF 後再試';
-                        else if (response.status === 504) msg = '伺服器處理逾時，請再試一次';
-                        else msg = `請求失敗 (${response.status}): ${errorText.substring(0, 100)}`;
+                        msg = `請求失敗 (${response.status}): ${errorText.substring(0, 100)}`;
                     }
                     throw new Error(msg);
                 }
@@ -610,7 +601,7 @@
                 renderResults();
                 statusBanner.style.display = 'none';
                 tabsContainer.style.display = 'flex';
-                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個 DOI！`);
+                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個純文字 DOI！`);
             } catch (err) {
                 alert(`處理失敗: ${err.message}`);
                 statusBanner.style.display = 'none';
@@ -676,6 +667,7 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
+            // Render Clean Pure Text DOIs
             const doiList = document.getElementById('doiList');
             if (currentExtractedData.dois.length === 0) {
                 doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 10.xxxx/xxx 格式之 Reference DOI</div>`;
@@ -683,10 +675,13 @@
                 doiList.innerHTML = currentExtractedData.dois.map((item, i) => `
                     <div class="doi-item">
                         <div class="doi-info">
-                            <a href="${item.url}" target="_blank" class="doi-str">#${i+1}. ${item.doi}</a>
+                            <div class="doi-pure-text">#${i+1}. ${item.doi}</div>
                             <div class="doi-context">Line ${item.line_number}: ${escapeHtml(item.context)}</div>
                         </div>
-                        <button class="btn" onclick="copyToClipboard('${item.doi}')">複製 DOI</button>
+                        <div class="doi-btn-group">
+                            <button class="btn" onclick="copyToClipboard('${item.doi}', '已複製純文字 DOI: ${item.doi}')">📋 複製 DOI</button>
+                            <button class="btn" onclick="window.open('https://scholar.google.com/scholar?q=${encodeURIComponent(item.doi)}', '_blank')">🔍 Google 學術搜尋</button>
+                        </div>
                     </div>
                 `).join('');
             }
@@ -717,8 +712,9 @@
                 });
                 copyToClipboard(tsv, '已複製 SAM 表格數據 (可直接貼上至 Excel)！');
             } else if (activeTab === 'doiTab') {
+                // Pure DOIs only, one per line
                 const doiText = currentExtractedData.dois.map(d => d.doi).join('\n');
-                copyToClipboard(doiText, '已複製所有 Reference DOI 列表！');
+                copyToClipboard(doiText, '已複製所有純文字 DOI 列表！');
             } else if (activeTab === 'mdTab') {
                 copyToClipboard(currentExtractedData.markdown, '已複製 Markdown 原文！');
             }
