@@ -33,7 +33,7 @@ KNOWN_SAM_SMILES = {
 }
 
 SYSTEM_PROMPT = """
-你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）數據擷取專家。
+你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據擷取專家。
 請閱讀論文，擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 
 最高原則：
@@ -86,39 +86,52 @@ SYSTEM_PROMPT = """
 ]
 """
 
-def extract_sam_data_with_gemini(markdown_text: str, api_key: str, images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Extract SAM data using Google Gemini API."""
-    try:
-        from google import genai
-        from google.genai import types
-        
-        client = genai.Client(api_key=api_key)
-        prompt = SYSTEM_PROMPT + f"\n\n論文內容：\n{markdown_text[:35000]}"
-        contents = [prompt]
-        
-        if images_base64:
-            for img_b64 in images_base64[:3]:
-                if "," in img_b64:
-                    img_b64 = img_b64.split(",")[1]
-                img_data = base64.b64decode(img_b64)
-                contents.append(types.Part.from_bytes(data=img_data, mime_type="image/png"))
-
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.1,
-            ),
-        )
-        
-        parsed = json.loads(response.text)
-        if isinstance(parsed, list):
-            return parsed
-    except Exception as e:
-        print(f"Gemini API extraction error: {e}")
+def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> List[Dict[str, Any]]:
+    """Extract SAM data using Google Gemini API with fallback models."""
+    from google import genai
+    from google.genai import types
     
-    return extract_sam_data_rule_based(markdown_text)
+    client = genai.Client(api_key=api_key)
+    prompt = SYSTEM_PROMPT + f"\n\n論文內容：\n{markdown_text[:35000]}"
+    contents = [prompt]
+    
+    if images_base64:
+        for img_b64 in images_base64[:3]:
+            if "," in img_b64:
+                img_b64 = img_b64.split(",")[1]
+            img_data = base64.b64decode(img_b64)
+            contents.append(types.Part.from_bytes(data=img_data, mime_type="image/png"))
+
+    # Try requested model first, then fallback models
+    candidate_models = [model_name, "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-flash-latest"]
+    
+    last_error = None
+    for target_m in candidate_models:
+        if not target_m:
+            continue
+        try:
+            print(f"[Gemini API] Calling model: {target_m}...")
+            response = client.models.generate_content(
+                model=target_m,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.1,
+                ),
+            )
+            parsed = json.loads(response.text)
+            if isinstance(parsed, list):
+                print(f"[Gemini API] Success with model {target_m}! Extracted {len(parsed)} items.")
+                return parsed
+            elif isinstance(parsed, dict):
+                for v in parsed.values():
+                    if isinstance(v, list):
+                        return v
+        except Exception as e:
+            print(f"[Gemini API] Model {target_m} failed: {e}")
+            last_error = e
+
+    raise RuntimeError(f"Gemini API 呼叫失敗: {last_error}")
 
 def extract_sam_data_with_openai_compatible(
     markdown_text: str,
@@ -126,46 +139,41 @@ def extract_sam_data_with_openai_compatible(
     model_name: str = "gpt-4o-mini",
     api_base: str = "https://api.openai.com/v1"
 ) -> List[Dict[str, Any]]:
-    """
-    Extract SAM data using any OpenAI-compatible API (OpenAI, DeepSeek, Ollama, OpenRouter, Groq).
-    """
-    try:
-        url = f"{api_base.rstrip('/')}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+    """Extract SAM data using OpenAI-compatible API."""
+    url = f"{api_base.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    user_content = f"{SYSTEM_PROMPT}\n\n論文內容：\n{markdown_text[:35000]}"
+    payload = {
+        "model": model_name,
+        "messages": [
+            {"role": "user", "content": user_content}
+        ],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"} if "gpt-4" in model_name or "deepseek" in model_name else None
+    }
+
+    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    if resp.status_code == 200:
+        res_json = resp.json()
+        content = res_json['choices'][0]['message']['content']
+        content_clean = re.sub(r'^```json\s*', '', content.strip(), flags=re.IGNORECASE)
+        content_clean = re.sub(r'\s*```$', '', content_clean).strip()
         
-        user_content = f"{SYSTEM_PROMPT}\n\n論文內容：\n{markdown_text[:35000]}"
-        payload = {
-            "model": model_name,
-            "messages": [
-                {"role": "user", "content": user_content}
-            ],
-            "temperature": 0.1,
-            "response_format": {"type": "json_object"} if "gpt-4" in model_name or "deepseek" in model_name else None
-        }
+        parsed = json.loads(content_clean)
+        if isinstance(parsed, list):
+            return parsed
+        elif isinstance(parsed, dict):
+            for v in parsed.values():
+                if isinstance(v, list):
+                    return v
+    else:
+        raise RuntimeError(f"OpenAI 相容 API 錯誤 ({resp.status_code}): {resp.text[:200]}")
 
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        if resp.status_code == 200:
-            res_json = resp.json()
-            content = res_json['choices'][0]['message']['content']
-            # Clean markdown JSON wrapping if present
-            content_clean = re.sub(r'^```json\s*', '', content.strip(), flags=re.IGNORECASE)
-            content_clean = re.sub(r'\s*```$', '', content_clean).strip()
-            
-            parsed = json.loads(content_clean)
-            if isinstance(parsed, list):
-                return parsed
-            elif isinstance(parsed, dict):
-                # Handle wrapped json like {"data": [...]}
-                for v in parsed.values():
-                    if isinstance(v, list):
-                        return v
-    except Exception as e:
-        print(f"OpenAI-compatible API extraction error: {e}")
-
-    return extract_sam_data_rule_based(markdown_text)
+    raise RuntimeError("無法解析模型 JSON 回傳。")
 
 def parse_markdown_tables(markdown_text: str) -> List[Dict[str, Any]]:
     extracted_rows = []
@@ -321,16 +329,17 @@ def process_paper_markdown(
     api_key: Optional[str] = None,
     images_base64: List[str] = None,
     provider: str = "gemini",
-    model_name: str = "gemini-2.5-flash",
+    model_name: str = "gemini-3.6-flash",
     api_base: str = "https://api.openai.com/v1"
 ) -> List[Dict[str, Any]]:
-    """Main extraction router supporting Gemini, OpenAI, DeepSeek, Ollama, OpenRouter, and Custom APIs."""
+    """Main extraction router supporting Gemini (3.6/3.1/2.0), OpenAI, DeepSeek, Ollama, OpenRouter, and Custom APIs."""
     if api_key and api_key.strip():
         if provider == "openai" or provider == "deepseek" or provider == "custom":
             base_url = api_base if api_base and api_base.strip() else ("https://api.deepseek.com/v1" if provider == "deepseek" else "https://api.openai.com/v1")
             target_model = model_name if model_name and model_name.strip() else ("deepseek-chat" if provider == "deepseek" else "gpt-4o-mini")
             return extract_sam_data_with_openai_compatible(markdown_text, api_key.strip(), target_model, base_url)
         else:
-            return extract_sam_data_with_gemini(markdown_text, api_key.strip(), images_base64)
+            target_model = model_name.strip() if model_name and model_name.strip() else "gemini-3.6-flash"
+            return extract_sam_data_with_gemini(markdown_text, api_key.strip(), target_model, images_base64)
             
     return extract_sam_data_rule_based(markdown_text)

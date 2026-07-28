@@ -74,7 +74,7 @@
             flex-wrap: wrap;
         }
 
-        .provider-select {
+        .provider-select, .model-input {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             color: var(--text-main);
@@ -83,6 +83,11 @@
             font-size: 0.85rem;
             outline: none;
             cursor: pointer;
+        }
+
+        .model-input {
+            width: 150px;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .api-key-input-group {
@@ -429,20 +434,24 @@
     <header>
         <div class="logo-group">
             <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
-            <p>PDF 轉檔 ➔ 35 欄位 SAM 特徵擷取 (支援多 AI 模型) ➔ 純文字 Reference DOI</p>
+            <p>PDF 轉檔 ➔ 35 欄位 SAM 特徵擷取 (支援 Gemini 3.6/3.1/OpenAI/DeepSeek) ➔ 純文字 Reference DOI</p>
         </div>
         <div class="header-actions">
             <!-- Multi-Model Provider Dropdown -->
             <select id="modelProvider" class="provider-select">
-                <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
+                <option value="gemini-3.6-flash">Google Gemini 3.6 Flash (預設)</option>
+                <option value="gemini-3.1-pro-preview">Google Gemini 3.1 Pro</option>
+                <option value="gemini-3.1-flash-lite">Google Gemini 3.1 Flash Lite</option>
                 <option value="openai">OpenAI (gpt-4o-mini)</option>
                 <option value="deepseek">DeepSeek (deepseek-chat)</option>
-                <option value="custom">自訂 OpenAI 相容 Base URL</option>
+                <option value="custom">自訂模型名稱 / Base URL</option>
             </select>
+
+            <input type="text" id="customModelName" class="model-input" placeholder="模型名稱 (例 gemini-3.1-pro-preview)" style="display:none;" />
 
             <div class="api-key-input-group">
                 <label for="apiKey">API Key (選填):</label>
-                <input type="password" id="apiKey" placeholder="貼上對應 API Key 啟用 AI..." />
+                <input type="password" id="apiKey" placeholder="貼上 API Key 啟用 AI..." />
             </div>
         </div>
     </header>
@@ -520,16 +529,31 @@
 
         const apiKeyInput = document.getElementById('apiKey');
         const modelProviderSelect = document.getElementById('modelProvider');
+        const customModelInput = document.getElementById('customModelName');
 
         // Load saved state
         apiKeyInput.value = localStorage.getItem('llm_api_key') || '';
-        modelProviderSelect.value = localStorage.getItem('llm_provider') || 'gemini';
+        modelProviderSelect.value = localStorage.getItem('llm_provider') || 'gemini-3.6-flash';
+        customModelInput.value = localStorage.getItem('llm_custom_model') || '';
+
+        function toggleCustomModelInput() {
+            if (modelProviderSelect.value === 'custom') {
+                customModelInput.style.display = 'inline-block';
+            } else {
+                customModelInput.style.display = 'none';
+            }
+        }
+        toggleCustomModelInput();
 
         apiKeyInput.addEventListener('change', () => {
             localStorage.setItem('llm_api_key', apiKeyInput.value.trim());
         });
         modelProviderSelect.addEventListener('change', () => {
             localStorage.setItem('llm_provider', modelProviderSelect.value);
+            toggleCustomModelInput();
+        });
+        customModelInput.addEventListener('change', () => {
+            localStorage.setItem('llm_custom_model', customModelInput.value.trim());
         });
 
         const dropZone = document.getElementById('dropZone');
@@ -590,8 +614,22 @@
                     console.warn('Browser PDF text extraction failed:', pdfErr);
                 }
 
-                const provider = modelProviderSelect.value;
+                const selVal = modelProviderSelect.value;
                 const apiKey = apiKeyInput.value.trim();
+
+                let provider = "gemini";
+                let modelName = selVal;
+
+                if (selVal === 'openai') {
+                    provider = 'openai';
+                    modelName = 'gpt-4o-mini';
+                } else if (selVal === 'deepseek') {
+                    provider = 'deepseek';
+                    modelName = 'deepseek-chat';
+                } else if (selVal === 'custom') {
+                    provider = 'custom';
+                    modelName = customModelInput.value.trim() || 'gemini-3.1-pro-preview';
+                }
 
                 let response;
                 if (markdownText && markdownText.trim().length > 100) {
@@ -603,7 +641,7 @@
                             filename: file.name,
                             api_key: apiKey,
                             provider: provider,
-                            model_name: provider === 'deepseek' ? 'deepseek-chat' : (provider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash')
+                            model_name: modelName
                         })
                     });
                 } else {
@@ -611,6 +649,7 @@
                     formData.append('file', file);
                     if (apiKey) formData.append('api_key', apiKey);
                     formData.append('provider', provider);
+                    formData.append('model_name', modelName);
                     response = await fetch('/api/convert-and-extract', {
                         method: 'POST',
                         body: formData
