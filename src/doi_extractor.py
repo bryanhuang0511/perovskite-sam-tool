@@ -108,8 +108,8 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                 })
 
     # 2. Extract Reference Citation entries from References section
-    ref_pos = max(unwrapped_text.rfind("\nReferences"), unwrapped_text.rfind("\nREFERENCES"))
-    ref_block = unwrapped_text[ref_pos:] if ref_pos != -1 else unwrapped_text[int(len(unwrapped_text)*0.6):]
+    ref_pos = max(unwrapped_text.rfind("References"), unwrapped_text.rfind("REFERENCES"))
+    ref_block = unwrapped_text[ref_pos:] if ref_pos != -1 else unwrapped_text[int(len(unwrapped_text)*0.5):]
 
     raw_splits = re.split(r'(?:\n|^|\b)(?:\[\d{1,3}\]|\(\d{1,3}\)|\b\d{1,3}\.)\s+', ref_block)
     
@@ -180,8 +180,8 @@ def extract_all_reference_dois_with_ai(
 
     client = genai.Client(api_key=api_key)
     
-    ref_pos = max(paper_text.rfind("\nReferences"), paper_text.rfind("\nREFERENCES"))
-    ref_text_block = paper_text[ref_pos:] if ref_pos != -1 else paper_text[int(len(paper_text)*0.6):]
+    ref_pos = max(paper_text.rfind("References"), paper_text.rfind("REFERENCES"))
+    ref_text_block = paper_text[ref_pos:] if ref_pos != -1 else paper_text[int(len(paper_text)*0.5):]
     
     prompt = f"""
 你是頂尖學術參考文獻 DOI 提取專家。
@@ -208,7 +208,11 @@ References 內容：
                     temperature=0.0
                 )
             )
-            parsed = json.loads(resp.text)
+            raw_txt = resp.text.strip()
+            raw_txt = re.sub(r'^```json\s*', '', raw_txt, flags=re.IGNORECASE)
+            raw_txt = re.sub(r'\s*```$', '', raw_txt).strip()
+            parsed = json.loads(raw_txt)
+
             if isinstance(parsed, list) and len(parsed) > 0:
                 results = []
                 seen = set()
