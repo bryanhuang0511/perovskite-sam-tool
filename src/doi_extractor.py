@@ -15,6 +15,8 @@ def clean_doi(raw_doi: str) -> str:
         doi = doi.rstrip(')')
 
     doi = re.sub(r'(\.html|\.pdf|\.txt|\.zip|\.xml)$', '', doi, flags=re.IGNORECASE)
+    # Strip trailing metadata words commonly concatenated during PDF text extraction
+    doi = re.sub(r'(Received|Accepted|Available|Published|Online|Revised|Submitted|Copyright|Abstract|Keywords|Introduction).*$', '', doi)
     return doi.strip()
 
 def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
