@@ -88,13 +88,13 @@ SYSTEM_PROMPT = """
 """
 
 def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Extract SAM data using Google Gemini API with full-paper context."""
+    """Extract SAM data using Google Gemini API with 100% full paper markdown content."""
     from google import genai
     from google.genai import types
     
     client = genai.Client(api_key=api_key)
-    # Pass up to 120,000 characters to cover full paper and experimental sections
-    prompt = SYSTEM_PROMPT + f"\n\n論文全文內容：\n{markdown_text[:120000]}"
+    # Pass 100% full paper markdown text without any artificial string truncation
+    prompt = SYSTEM_PROMPT + f"\n\n論文 100% 全文內容：\n{markdown_text}"
     contents = [prompt]
     
     if images_base64:
@@ -111,7 +111,7 @@ def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: s
         if not target_m:
             continue
         try:
-            print(f"[Gemini API] Calling model: {target_m} with full text ({min(len(markdown_text), 120000)} chars)...")
+            print(f"[Gemini API] Calling model: {target_m} with 100% full paper text ({len(markdown_text)} chars)...")
             response = client.models.generate_content(
                 model=target_m,
                 contents=contents,
@@ -140,14 +140,14 @@ def extract_sam_data_with_openai_compatible(
     model_name: str = "gpt-4o-mini",
     api_base: str = "https://api.openai.com/v1"
 ) -> List[Dict[str, Any]]:
-    """Extract SAM data using OpenAI-compatible API."""
+    """Extract SAM data using OpenAI-compatible API with 100% full paper text."""
     url = f"{api_base.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
-    user_content = f"{SYSTEM_PROMPT}\n\n論文全文內容：\n{markdown_text[:120000]}"
+    user_content = f"{SYSTEM_PROMPT}\n\n論文 100% 全文內容：\n{markdown_text}"
     payload = {
         "model": model_name,
         "messages": [
