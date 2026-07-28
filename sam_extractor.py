@@ -34,12 +34,12 @@ KNOWN_SAM_SMILES = {
 
 SYSTEM_PROMPT = """
 你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據擷取專家。
-請閱讀論文（包含正文、表格與圖表），擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
+請閱讀整篇論文（包含正文敘述、實驗章節 Experimental Methods、補充資訊 SI、表格與腳註），擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 
-最高原則：
-1. 若論文包含彙總表格（Summary Table，如 Table 1 / Table 2），請結合正文中關於該分子的化學結構描述、SMILES 結構式、溶劑、濃度、能階 E 與原始 Reference DOI，完整補齊所有 35 欄位！
-2. 只有當論文正文與表格確實皆未載明時，該欄位才填空字串 ""，並在 Data_status 標明 "缺:欄位名"。
-3. 只有當表格或內文明確指出該數據點來自某篇參考文獻時，才填寫 Reference_DOI。
+核心原則（跨段落跨章節資訊整合）：
+1. 論文的 Summary Table 通常只寫了分子名稱與 PCE，但該分子的【化學 SMILES 結構式】、【沖洗步驟 wash】、【使用溶劑 (ethanol/toluene/IPA...)】、【調配濃度 (concentration)】、【能階 E】與【鈣鈦礦 A/B/X-site 組成 (Cs/FA/MA/Pb/Sn/I/Br/Cl)】通常散落在正文敘述、實驗方法與腳註中！
+2. 請務必閱讀整篇論文的正文與實驗描述，將散落於正文的製程與元件條件與數據點結合，為【每一個數據點】完整補齊 35 個欄位！切勿單純抄錄表格而留下大量空白。
+3. 只有當論文正文、實驗方法與表格確實皆未載明時，該欄位才填空字串 ""，並在 Data_status 標明 "缺:欄位名"。
 4. 標色規則：正文/表格文字抄錄為白（""）；讀圖或邏輯推論為紅（"red"）；無法讀取缺失為黑（"black"）。
 
 請回傳純 JSON 陣列（JSON Array）：
@@ -88,12 +88,13 @@ SYSTEM_PROMPT = """
 """
 
 def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> List[Dict[str, Any]]:
-    """Extract SAM data using Google Gemini API with fallback models."""
+    """Extract SAM data using Google Gemini API with full-paper context."""
     from google import genai
     from google.genai import types
     
     client = genai.Client(api_key=api_key)
-    prompt = SYSTEM_PROMPT + f"\n\n論文內容：\n{markdown_text[:35000]}"
+    # Pass up to 120,000 characters to cover full paper and experimental sections
+    prompt = SYSTEM_PROMPT + f"\n\n論文全文內容：\n{markdown_text[:120000]}"
     contents = [prompt]
     
     if images_base64:
@@ -110,7 +111,7 @@ def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: s
         if not target_m:
             continue
         try:
-            print(f"[Gemini API] Calling model: {target_m}...")
+            print(f"[Gemini API] Calling model: {target_m} with full text ({min(len(markdown_text), 120000)} chars)...")
             response = client.models.generate_content(
                 model=target_m,
                 contents=contents,
@@ -146,7 +147,7 @@ def extract_sam_data_with_openai_compatible(
         "Content-Type": "application/json"
     }
     
-    user_content = f"{SYSTEM_PROMPT}\n\n論文內容：\n{markdown_text[:35000]}"
+    user_content = f"{SYSTEM_PROMPT}\n\n論文全文內容：\n{markdown_text[:120000]}"
     payload = {
         "model": model_name,
         "messages": [
@@ -156,7 +157,7 @@ def extract_sam_data_with_openai_compatible(
         "response_format": {"type": "json_object"} if "gpt-4" in model_name or "deepseek" in model_name else None
     }
 
-    resp = requests.post(url, headers=headers, json=payload, timeout=60)
+    resp = requests.post(url, headers=headers, json=payload, timeout=90)
     if resp.status_code == 200:
         res_json = resp.json()
         content = res_json['choices'][0]['message']['content']
