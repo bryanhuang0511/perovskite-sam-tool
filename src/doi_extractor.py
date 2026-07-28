@@ -5,12 +5,6 @@ import requests
 from typing import List, Dict, Any, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 
-try:
-    from habanero import Crossref
-    cr_client = Crossref(mailto="perovskitesamtool@gmail.com")
-except Exception:
-    cr_client = None
-
 def clean_doi(raw_doi: str) -> str:
     """Clean and normalize an extracted DOI string."""
     doi = raw_doi.strip()
@@ -31,27 +25,28 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
     if len(clean_text) < 12:
         return None
 
-    if cr_client:
-        try:
-            res = cr_client.works(query_bibliographic=clean_text, limit=1)
-            items = res.get("message", {}).get("items", [])
-            if items:
-                item = items[0]
-                doi = item.get("DOI", "")
-                score = item.get("score", 0.0)
-                title = item.get("title", [""])[0] if item.get("title") else ""
-                container = item.get("container-title", [""])[0] if item.get("container-title") else ""
-                
-                if doi and score >= 20.0:
-                    return {
-                        "doi": clean_doi(doi),
-                        "title": title,
-                        "journal": container,
-                        "score": score,
-                        "verified_by": "Crossref (Habanero Engine)"
-                    }
-        except Exception:
-            pass
+    try:
+        from habanero import Crossref
+        cr_client = Crossref(mailto="perovskitesamtool@gmail.com")
+        res = cr_client.works(query_bibliographic=clean_text, limit=1)
+        items = res.get("message", {}).get("items", [])
+        if items:
+            item = items[0]
+            doi = item.get("DOI", "")
+            score = item.get("score", 0.0)
+            title = item.get("title", [""])[0] if item.get("title") else ""
+            container = item.get("container-title", [""])[0] if item.get("container-title") else ""
+            
+            if doi and score >= 20.0:
+                return {
+                    "doi": clean_doi(doi),
+                    "title": title,
+                    "journal": container,
+                    "score": score,
+                    "verified_by": "Crossref (Habanero Engine)"
+                }
+    except Exception:
+        pass
 
     try:
         url = "https://api.crossref.org/works"
@@ -130,7 +125,7 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
         if len(clean_ref) >= 15:
             valid_entries.append((idx, clean_ref[:250]))
 
-    # Perform Concurrent API requests with 10 parallel workers for maximum serverless stability
+    # Perform Concurrent API requests with 10 parallel workers
     with ThreadPoolExecutor(max_workers=10) as executor:
         future_to_entry = {}
         for idx, clean_ref in valid_entries:
@@ -260,12 +255,3 @@ References 內容：
         print(f"[AI Full DOI Outer Error]: {outer_e}")
 
     return []
-
-if __name__ == "__main__":
-    from pypdf import PdfReader
-    pdf_path = r"c:\Users\yexia\Documents\黃士緯\大學\趙宇強\GitHub\擷取工具\2026 Review  pin  1-s2.0-S0927024826000553-main [Solar Energy Materials and Solar Cells 299 (2026) 114214 ].pdf"
-    text = "".join([p.extract_text() or "" for p in PdfReader(pdf_path).pages])
-    extracted = extract_dois_from_text(text)
-    print(f"Habanero + Crossref Engine extracted {len(extracted)} DOIs!")
-    for d in extracted[:5]:
-        print(f" - #{d['line_number']}: {d['doi']} ({d.get('verification')})")
