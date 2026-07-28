@@ -23,11 +23,15 @@ def index():
 
 @app.post("/api/extract-text-sam")
 async def extract_text_sam(payload: dict):
-    """Extract SAM dataset and DOI references directly from text/markdown payload and optional figure images."""
+    """Extract SAM dataset and DOI references directly from text/markdown payload supporting multiple LLM providers."""
     markdown_text = payload.get("markdown", "")
     filename = payload.get("filename", "paper.pdf")
     api_key = payload.get("api_key", None)
     images_base64 = payload.get("images", [])
+    
+    provider = payload.get("provider", "gemini")
+    model_name = payload.get("model_name", "gemini-2.5-flash")
+    api_base = payload.get("api_base", "https://api.openai.com/v1")
     
     if not markdown_text.strip():
         raise HTTPException(status_code=400, detail="未收到論文文字內容。")
@@ -36,7 +40,14 @@ async def extract_text_sam(payload: dict):
     dois = extract_dois_from_text(markdown_text)
     
     # Extract SAM p-i-n perovskite dataset features
-    sam_data = process_paper_markdown(markdown_text, api_key=api_key, images_base64=images_base64)
+    sam_data = process_paper_markdown(
+        markdown_text,
+        api_key=api_key,
+        images_base64=images_base64,
+        provider=provider,
+        model_name=model_name,
+        api_base=api_base
+    )
     
     return JSONResponse(content={
         "filename": filename,

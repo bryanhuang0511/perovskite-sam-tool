@@ -41,15 +41,17 @@
         header {
             background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 100%);
             border-bottom: 1px solid var(--border-color);
-            padding: 1.5rem 2rem;
+            padding: 1.2rem 2rem;
             display: flex;
             align-items: center;
             justify-content: space-between;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            flex-wrap: wrap;
+            gap: 1rem;
         }
 
         .logo-group h1 {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
             font-weight: 700;
             background: linear-gradient(135deg, #818cf8 0%, #38bdf8 100%);
             -webkit-background-clip: text;
@@ -60,7 +62,7 @@
         }
 
         .logo-group p {
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             color: var(--text-muted);
             margin-top: 0.2rem;
         }
@@ -68,7 +70,19 @@
         .header-actions {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .provider-select {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            outline: none;
+            cursor: pointer;
         }
 
         .api-key-input-group {
@@ -92,7 +106,7 @@
             border: none;
             color: var(--text-main);
             font-size: 0.85rem;
-            width: 180px;
+            width: 170px;
             outline: none;
             font-family: 'JetBrains Mono', monospace;
         }
@@ -326,7 +340,6 @@
         td.cell-black { background-color: #000000 !important; color: #ffffff !important; font-weight: 500; }
         td.cell-white { background-color: #ffffff !important; color: #0f172a !important; }
 
-        /* DOI List View */
         .doi-list {
             display: flex;
             flex-direction: column;
@@ -416,12 +429,20 @@
     <header>
         <div class="logo-group">
             <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
-            <p>PDF 自動轉 Markdown ➔ 35 欄位 SAM p-i-n 結構特徵擷取 ➔ 純文字 Reference DOI 清單</p>
+            <p>PDF 轉檔 ➔ 35 欄位 SAM 特徵擷取 (支援多 AI 模型) ➔ 純文字 Reference DOI</p>
         </div>
         <div class="header-actions">
+            <!-- Multi-Model Provider Dropdown -->
+            <select id="modelProvider" class="provider-select">
+                <option value="gemini">Google Gemini (gemini-2.5-flash)</option>
+                <option value="openai">OpenAI (gpt-4o-mini)</option>
+                <option value="deepseek">DeepSeek (deepseek-chat)</option>
+                <option value="custom">自訂 OpenAI 相容 Base URL</option>
+            </select>
+
             <div class="api-key-input-group">
-                <label for="apiKey">Gemini API Key (選填):</label>
-                <input type="password" id="apiKey" placeholder="貼上 API Key 啟用 AI 解析..." />
+                <label for="apiKey">API Key (選填):</label>
+                <input type="password" id="apiKey" placeholder="貼上對應 API Key 啟用 AI..." />
             </div>
         </div>
     </header>
@@ -430,7 +451,7 @@
         <div class="upload-card" id="dropZone">
             <div class="upload-icon">📄</div>
             <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
-            <div class="upload-subtitle">支援各種 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
+            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
             <input type="file" id="fileInput" accept=".pdf" />
         </div>
 
@@ -473,7 +494,6 @@
                 </div>
             </div>
 
-            <!-- Tab 2: Clean Pure Reference DOIs -->
             <div class="tab-content" id="doiTab">
                 <div class="doi-list" id="doiList"></div>
             </div>
@@ -499,9 +519,17 @@
         };
 
         const apiKeyInput = document.getElementById('apiKey');
-        apiKeyInput.value = localStorage.getItem('gemini_api_key') || '';
+        const modelProviderSelect = document.getElementById('modelProvider');
+
+        // Load saved state
+        apiKeyInput.value = localStorage.getItem('llm_api_key') || '';
+        modelProviderSelect.value = localStorage.getItem('llm_provider') || 'gemini';
+
         apiKeyInput.addEventListener('change', () => {
-            localStorage.setItem('gemini_api_key', apiKeyInput.value.trim());
+            localStorage.setItem('llm_api_key', apiKeyInput.value.trim());
+        });
+        modelProviderSelect.addEventListener('change', () => {
+            localStorage.setItem('llm_provider', modelProviderSelect.value);
         });
 
         const dropZone = document.getElementById('dropZone');
@@ -552,7 +580,7 @@
 
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
-            statusText.innerText = `正在讀取 ${file.name} 內文並提取數據點與純文字 DOI 列表...`;
+            statusText.innerText = `正在讀取 ${file.name} 內文並透過 AI 提取數據點與純文字 DOI 列表...`;
 
             try {
                 let markdownText = "";
@@ -562,6 +590,9 @@
                     console.warn('Browser PDF text extraction failed:', pdfErr);
                 }
 
+                const provider = modelProviderSelect.value;
+                const apiKey = apiKeyInput.value.trim();
+
                 let response;
                 if (markdownText && markdownText.trim().length > 100) {
                     response = await fetch('/api/extract-text-sam', {
@@ -570,15 +601,16 @@
                         body: JSON.stringify({
                             markdown: markdownText,
                             filename: file.name,
-                            api_key: apiKeyInput.value.trim()
+                            api_key: apiKey,
+                            provider: provider,
+                            model_name: provider === 'deepseek' ? 'deepseek-chat' : (provider === 'openai' ? 'gpt-4o-mini' : 'gemini-2.5-flash')
                         })
                     });
                 } else {
                     const formData = new FormData();
                     formData.append('file', file);
-                    if (apiKeyInput.value.trim()) {
-                        formData.append('api_key', apiKeyInput.value.trim());
-                    }
+                    if (apiKey) formData.append('api_key', apiKey);
+                    formData.append('provider', provider);
                     response = await fetch('/api/convert-and-extract', {
                         method: 'POST',
                         body: formData
@@ -667,7 +699,6 @@
                 return `<tr>${cells}</tr>`;
             }).join('');
 
-            // Render Clean Pure Text DOIs
             const doiList = document.getElementById('doiList');
             if (currentExtractedData.dois.length === 0) {
                 doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 10.xxxx/xxx 格式之 Reference DOI</div>`;
@@ -712,7 +743,6 @@
                 });
                 copyToClipboard(tsv, '已複製 SAM 表格數據 (可直接貼上至 Excel)！');
             } else if (activeTab === 'doiTab') {
-                // Pure DOIs only, one per line
                 const doiText = currentExtractedData.dois.map(d => d.doi).join('\n');
                 copyToClipboard(doiText, '已複製所有純文字 DOI 列表！');
             } else if (activeTab === 'mdTab') {
