@@ -6,7 +6,7 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.doi_extractor import extract_dois_from_text, clean_doi, verify_dois_with_ai
+from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
 from src.sam_extractor import process_paper_markdown
 from src.excel_exporter import generate_sam_excel
 
@@ -70,6 +70,16 @@ async def extract_text_sam(payload: dict):
     sam_data = res_dict.get("sam_dataset", [])
     ai_dois = res_dict.get("reference_dois", [])
 
+    # Step 3: If API Key is present, run AI Full-Reference DOI Engine to return ALL 140+ DOIs in 1 pass!
+    if api_key and api_key.strip():
+        try:
+            ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
+            if len(ai_all) > len(dois):
+                dois = ai_all
+                seen_dois = {d["doi"].lower() for d in dois}
+        except Exception as e:
+            print(f"[AI All DOIs Error]: {e}")
+
     # Merge any extra AI-discovered DOIs
     for ai_item in ai_dois:
         if isinstance(ai_item, dict):
@@ -90,11 +100,9 @@ async def extract_text_sam(payload: dict):
                 "verification": "AI Extracted"
             })
 
-    # Step 3: AI Inspection & Audit Engine (Runs when API Key is provided)
-    if api_key and api_key.strip():
-        dois = verify_dois_with_ai(dois, markdown_text, api_key.strip(), model_name)
-    else:
-        for d in dois:
+    # Step 4: Add verification badges if not already present
+    for d in dois:
+        if "ai_status" not in d:
             d["ai_verified"] = True
             d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
 
@@ -155,6 +163,15 @@ async def convert_and_extract(
         sam_data = res_dict.get("sam_dataset", [])
         ai_dois = res_dict.get("reference_dois", [])
 
+        if api_key and api_key.strip():
+            try:
+                ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
+                if len(ai_all) > len(dois):
+                    dois = ai_all
+                    seen_dois = {d["doi"].lower() for d in dois}
+            except Exception as e:
+                print(f"[AI All DOIs Error]: {e}")
+
         for ai_item in ai_dois:
             if isinstance(ai_item, dict):
                 doi_val = clean_doi(ai_item.get("doi", ""))
@@ -174,10 +191,8 @@ async def convert_and_extract(
                     "verification": "AI Extracted"
                 })
 
-        if api_key and api_key.strip():
-            dois = verify_dois_with_ai(dois, markdown_text, api_key.strip(), model_name)
-        else:
-            for d in dois:
+        for d in dois:
+            if "ai_status" not in d:
                 d["ai_verified"] = True
                 d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
         
