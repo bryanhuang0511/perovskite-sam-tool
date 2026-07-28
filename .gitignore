@@ -6,7 +6,4 @@ __pycache__/
 .DS_Store
 .env
 src/tests/
-static/
-Dockerfile
-render.yaml
-run_server.bat
+/static/

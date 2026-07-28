@@ -27,10 +27,13 @@ app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1
 
 static_dir = os.path.join(base_dir, "static")
 if not os.path.exists(static_dir):
-    static_dir = "static"
+    static_dir = os.path.join(parent_dir, "static")
 
-os.makedirs(static_dir, exist_ok=True)
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+try:
+    if os.path.isdir(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+except Exception:
+    pass
 
 NO_CACHE_HEADERS = {
     "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
@@ -61,11 +64,17 @@ def safe_truncate_paper_text(text: str, max_chars: int = 55000) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    html_path = os.path.join(static_dir, "index.html")
-    if not os.path.exists(html_path):
-        html_path = "static/index.html"
-    with open(html_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
+    candidates = [
+        os.path.join(static_dir, "index.html"),
+        os.path.join(base_dir, "static", "index.html"),
+        os.path.join(parent_dir, "src", "static", "index.html"),
+        os.path.join(parent_dir, "static", "index.html"),
+    ]
+    for html_path in candidates:
+        if os.path.exists(html_path):
+            with open(html_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
+    return HTMLResponse(content="<h1>鈣鈦礦 SAM 擷取工具</h1><p>index.html not found</p>", headers=NO_CACHE_HEADERS)
 
 @app.post("/api/extract-text-sam")
 async def extract_text_sam(payload: dict):
