@@ -17,36 +17,14 @@ def clean_doi(raw_doi: str) -> str:
     doi = re.sub(r'(\.html|\.pdf|\.txt|\.zip|\.xml)$', '', doi, flags=re.IGNORECASE)
     return doi.strip()
 
-def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]]:
+def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
     """
-    Resolve a reference citation string to exact DOI via habanero / Crossref official weighted matcher.
+    Resolve a reference citation string to exact DOI via Crossref Polite Pool REST API.
+    Zero-token lightweight pure Python HTTP resolution.
     """
     clean_text = citation_str[:180].strip()
     if len(clean_text) < 12:
         return None
-
-    try:
-        from habanero import Crossref
-        cr_client = Crossref(mailto="perovskitesamtool@gmail.com")
-        res = cr_client.works(query_bibliographic=clean_text, limit=1)
-        items = res.get("message", {}).get("items", [])
-        if items:
-            item = items[0]
-            doi = item.get("DOI", "")
-            score = item.get("score", 0.0)
-            title = item.get("title", [""])[0] if item.get("title") else ""
-            container = item.get("container-title", [""])[0] if item.get("container-title") else ""
-            
-            if doi and score >= 20.0:
-                return {
-                    "doi": clean_doi(doi),
-                    "title": title,
-                    "journal": container,
-                    "score": score,
-                    "verified_by": "Crossref (Habanero Engine)"
-                }
-    except Exception:
-        pass
 
     try:
         url = "https://api.crossref.org/works"
@@ -67,7 +45,7 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
                         "title": title,
                         "journal": container,
                         "score": score,
-                        "verified_by": "Crossref (REST API)"
+                        "verified_by": "Crossref (Polite Pool API)"
                     }
     except Exception:
         pass
@@ -143,7 +121,7 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                         "verification": "Inline Text Match"
                     })
             else:
-                future = executor.submit(resolve_citation_with_habanero, clean_ref)
+                future = executor.submit(resolve_citation_to_doi, clean_ref)
                 future_to_entry[future] = (idx, clean_ref)
 
         try:
