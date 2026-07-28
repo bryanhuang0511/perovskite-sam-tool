@@ -15,11 +15,11 @@ if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
 try:
-    from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
+    from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai
     from src.sam_extractor import process_paper_markdown
     from src.excel_exporter import generate_sam_excel
 except ImportError:
-    from doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai, verify_dois_with_ai
+    from doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai
     from sam_extractor import process_paper_markdown
     from excel_exporter import generate_sam_excel
 
@@ -135,7 +135,7 @@ async def extract_text_sam(payload: dict):
         for d in dois:
             if "ai_status" not in d:
                 d["ai_verified"] = True
-                d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
+                d["ai_status"] = "✅ 已通過 Crossref 官方權重校驗"
 
         return JSONResponse(content={
             "filename": filename,
@@ -230,7 +230,7 @@ async def convert_and_extract(
         for d in dois:
             if "ai_status" not in d:
                 d["ai_verified"] = True
-                d["ai_status"] = "✅ 已通過 Habanero / Crossref 官方權重校驗"
+                d["ai_status"] = "✅ 已通過 Crossref 官方權重校驗"
         
         return JSONResponse(content={
             "filename": file.filename,
