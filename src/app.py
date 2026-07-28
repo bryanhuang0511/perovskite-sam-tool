@@ -20,21 +20,25 @@ if not os.path.exists(static_dir):
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0"
+}
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     html_path = os.path.join(static_dir, "index.html")
     if not os.path.exists(html_path):
         html_path = "static/index.html"
     with open(html_path, "r", encoding="utf-8") as f:
-        return f.read()
+        return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
 
 @app.post("/api/extract-text-sam")
 async def extract_text_sam(payload: dict):
     """
     Extract SAM dataset and DOI references directly from text/markdown payload.
-    Uses Habanero Crossref official weighted engine for 0-token DOIs,
-    saves AI tokens for 35-column dataset extraction,
-    and runs AI DOI Audit Inspection Engine when API key is provided.
+    Stateless & Fresh Execution Guarantee (No Memory Retention).
     """
     markdown_text = payload.get("markdown", "")
     filename = payload.get("filename", "paper.pdf")
@@ -52,7 +56,7 @@ async def extract_text_sam(payload: dict):
     dois = extract_dois_from_text(markdown_text)
     seen_dois = {d["doi"].lower() for d in dois}
 
-    # Step 2: AI SAM Dataset Feature Extraction (Focusing 100% tokens on complex materials & process conditions)
+    # Step 2: AI SAM Dataset Feature Extraction with Fresh Stateless Memory-Wipe Guarantee
     res_dict, usage_info = process_paper_markdown(
         markdown_text,
         api_key=api_key,
@@ -86,7 +90,7 @@ async def extract_text_sam(payload: dict):
                 "verification": "AI Extracted"
             })
 
-    # Step 3: AI Inspection & Audit Engine (Runs when API Key is provided to verify 100% accuracy)
+    # Step 3: AI Inspection & Audit Engine (Runs when API Key is provided)
     if api_key and api_key.strip():
         dois = verify_dois_with_ai(dois, markdown_text, api_key.strip(), model_name)
     else:
@@ -102,7 +106,7 @@ async def extract_text_sam(payload: dict):
         "doi_count": len(dois),
         "sam_count": len(sam_data),
         "usage_info": usage_info
-    })
+    }, headers=NO_CACHE_HEADERS)
 
 @app.post("/api/convert-and-extract")
 async def convert_and_extract(
@@ -185,7 +189,7 @@ async def convert_and_extract(
             "doi_count": len(dois),
             "sam_count": len(sam_data),
             "usage_info": usage_info
-        })
+        }, headers=NO_CACHE_HEADERS)
 
     finally:
         if os.path.exists(temp_pdf_path):
@@ -205,7 +209,8 @@ async def export_excel(payload: dict):
     excel_bytes = generate_sam_excel(sam_data, dois)
     
     headers = {
-        'Content-Disposition': f'attachment; filename="{clean_filename}"'
+        'Content-Disposition': f'attachment; filename="{clean_filename}"',
+        **NO_CACHE_HEADERS
     }
     return StreamingResponse(
         io.BytesIO(excel_bytes),

@@ -513,13 +513,13 @@
         <div class="upload-card" id="dropZone">
             <div class="upload-icon">📄</div>
             <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
-            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
+            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (每次上傳自動強制清空歷史記憶與快取)</div>
             <input type="file" id="fileInput" accept=".pdf" />
         </div>
 
         <div class="status-banner" id="statusBanner">
             <div class="spinner"></div>
-            <div class="status-text" id="statusText">正在讀取 PDF 內文與數據點...</div>
+            <div class="status-text" id="statusText">正在清空舊快取並獨立解析新 PDF 數據...</div>
         </div>
 
         <!-- RPM & TPM Rate Limit Dashboard Card -->
@@ -593,6 +593,7 @@
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
 
+        // Global State: Always cleared on every new upload
         let currentExtractedData = {
             filename: "",
             markdown: "",
@@ -686,15 +687,32 @@
                 return;
             }
 
+            // 1. Mandatory Memory-Wipe & State Reset for fresh execution
+            currentExtractedData = {
+                filename: "",
+                markdown: "",
+                sam_data: [],
+                dois: [],
+                usage_info: {}
+            };
+
             const statusBanner = document.getElementById('statusBanner');
             const tabsContainer = document.getElementById('tabsContainer');
             const tokenDashboard = document.getElementById('tokenDashboard');
             const statusText = document.getElementById('statusText');
 
+            // Reset UI displays completely
+            document.getElementById('samCountBadge').innerText = '0';
+            document.getElementById('doiCountBadge').innerText = '0';
+            document.getElementById('samTableHeader').innerHTML = '';
+            document.getElementById('samTableBody').innerHTML = '';
+            document.getElementById('doiList').innerHTML = '';
+            document.getElementById('markdownPreview').innerText = '';
+
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
             tokenDashboard.style.display = 'none';
-            statusText.innerText = `正在透過 Habanero / Crossref 引擎解析 DOI 與 AI 數據特徵 (${file.name})...`;
+            statusText.innerText = `正在清空舊記憶並獨立解析新 PDF (${file.name})...`;
 
             const startTime = Date.now();
 
@@ -723,11 +741,18 @@
                     modelName = customModelInput.value.trim() || 'gemini-3.1-pro-preview';
                 }
 
+                // Append cache-busting timestamp param to enforce fresh API execution
+                const cacheBuster = `_ts=${Date.now()}`;
+
                 let response;
                 if (markdownText && markdownText.trim().length > 100) {
-                    response = await fetch('/api/extract-text-sam', {
+                    response = await fetch(`/api/extract-text-sam?${cacheBuster}`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache'
+                        },
                         body: JSON.stringify({
                             markdown: markdownText,
                             filename: file.name,
@@ -742,8 +767,12 @@
                     if (apiKey) formData.append('api_key', apiKey);
                     formData.append('provider', provider);
                     formData.append('model_name', modelName);
-                    response = await fetch('/api/convert-and-extract', {
+                    response = await fetch(`/api/convert-and-extract?${cacheBuster}`, {
                         method: 'POST',
+                        headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache'
+                        },
                         body: formData
                     });
                 }
@@ -767,10 +796,12 @@
                 renderResults(durationSec);
                 statusBanner.style.display = 'none';
                 tabsContainer.style.display = 'flex';
-                showToast(`成功解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個校驗 DOI！`);
+                showToast(`成功獨立解析 ${currentExtractedData.sam_count} 個數據點與 ${currentExtractedData.doi_count} 個校驗 DOI！`);
             } catch (err) {
                 alert(`處理失敗: ${err.message}`);
                 statusBanner.style.display = 'none';
+            } finally {
+                fileInput.value = ''; // Clear file input element state
             }
         }
 

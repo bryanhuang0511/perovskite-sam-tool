@@ -34,6 +34,11 @@ KNOWN_SAM_SMILES = {
 
 SYSTEM_PROMPT = """
 你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據與 Reference DOI 擷取專家。
+
+【⚠️ 最高權限獨立記憶清除指令】：
+你必須【100% 僅根據當前輸入的這篇論文全文內容】進行數據提取。
+每一篇論文都是完全獨立且無狀態的。嚴禁引用、回憶或混入任何過去處理過的論文、已知記憶或歷史 context。如果當前論文內沒有提及某項數據，必須填寫 0 或留空，絕不能拿歷史記憶來填補！
+
 請閱讀整篇論文（包含正文敘述、實驗章節 Experimental Methods、補充資訊 SI、表格、腳註與文末 References 參考文獻章節）。
 
 請回傳一個包含 `sam_dataset` 陣列與 `reference_dois` 陣列的 JSON 物件：
@@ -90,18 +95,18 @@ SYSTEM_PROMPT = """
 }
 
 核心原則：
-1. 擷取內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
+1. 擷取【當前論文】內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
-3. 在 `reference_dois` 陣列中，請列出整篇論文文末 References 參考文獻章節中【所有】引用文獻的 DOI 號碼（純文字 10.xxxx/xxxx 格式）。若文末引用無明示 DOI，請根據作者與期刊提取對應已知 DOI。
+3. 在 `reference_dois` 陣列中，請列出【當前論文】文末 References 參考文獻章節中【所有】引用文獻的 DOI 號碼（純文字 10.xxxx/xxxx 格式）。
 """
 
 def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Extract SAM dataset & Reference DOIs using Google Gemini API."""
+    """Extract SAM dataset & Reference DOIs using Google Gemini API with stateless guarantee."""
     from google import genai
     from google.genai import types
     
     client = genai.Client(api_key=api_key)
-    prompt = SYSTEM_PROMPT + f"\n\n論文 100% 全文內容：\n{markdown_text}"
+    prompt = SYSTEM_PROMPT + f"\n\n【當前獨立論文 100% 全文內容】：\n{markdown_text}"
     contents = [prompt]
     
     if images_base64:
@@ -124,7 +129,7 @@ def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: s
                 contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    temperature=0.1,
+                    temperature=0.0,  # 0.0 temperature for deterministic & 0-memory response!
                 ),
             )
             parsed = json.loads(response.text)
@@ -157,20 +162,20 @@ def extract_sam_data_with_openai_compatible(
     model_name: str = "gpt-4o-mini",
     api_base: str = "https://api.openai.com/v1"
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Extract SAM dataset & Reference DOIs using OpenAI-compatible API."""
+    """Extract SAM dataset & Reference DOIs using OpenAI-compatible API with stateless guarantee."""
     url = f"{api_base.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
     
-    user_content = f"{SYSTEM_PROMPT}\n\n論文 100% 全文內容：\n{markdown_text}"
+    user_content = f"{SYSTEM_PROMPT}\n\n【當前獨立論文 100% 全文內容】：\n{markdown_text}"
     payload = {
         "model": model_name,
         "messages": [
             {"role": "user", "content": user_content}
         ],
-        "temperature": 0.1,
+        "temperature": 0.0,
         "response_format": {"type": "json_object"}
     }
 
