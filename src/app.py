@@ -6,18 +6,26 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.doi_extractor import extract_dois_from_text
+from src.doi_extractor import extract_dois_from_text, clean_doi
 from src.sam_extractor import process_paper_markdown
 from src.excel_exporter import generate_sam_excel
 
 app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1.0.0")
 
-os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+base_dir = os.path.dirname(os.path.abspath(__file__))
+static_dir = os.path.join(base_dir, "static")
+if not os.path.exists(static_dir):
+    static_dir = "static"
+
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    with open("static/index.html", "r", encoding="utf-8") as f:
+    html_path = os.path.join(static_dir, "index.html")
+    if not os.path.exists(html_path):
+        html_path = "static/index.html"
+    with open(html_path, "r", encoding="utf-8") as f:
         return f.read()
 
 @app.post("/api/extract-text-sam")
@@ -37,9 +45,10 @@ async def extract_text_sam(payload: dict):
 
     # Extract Reference DOIs with Crossref citation resolution
     dois = extract_dois_from_text(markdown_text)
-    
-    # Extract SAM p-i-n perovskite dataset features
-    sam_data, usage_info = process_paper_markdown(
+    seen_dois = {d["doi"].lower() for d in dois}
+
+    # Extract SAM p-i-n perovskite dataset features & AI Reference DOIs
+    res_dict, usage_info = process_paper_markdown(
         markdown_text,
         api_key=api_key,
         images_base64=images_base64,
@@ -48,6 +57,28 @@ async def extract_text_sam(payload: dict):
         api_base=api_base,
         return_usage=True
     )
+
+    sam_data = res_dict.get("sam_dataset", [])
+    ai_dois = res_dict.get("reference_dois", [])
+
+    # Seamlessly merge AI-extracted DOIs with Crossref DOIs
+    for ai_item in ai_dois:
+        if isinstance(ai_item, dict):
+            doi_val = clean_doi(ai_item.get("doi", ""))
+            ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
+        else:
+            doi_val = clean_doi(str(ai_item))
+            ctx_val = f"AI 特徵擷取 ({model_name})"
+
+        if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
+            seen_dois.add(doi_val.lower())
+            dois.append({
+                "doi": doi_val,
+                "url": f"https://doi.org/{doi_val}",
+                "line_number": len(dois) + 1,
+                "context": ctx_val,
+                "in_reference_section": True
+            })
     
     return JSONResponse(content={
         "filename": filename,
@@ -93,13 +124,36 @@ async def convert_and_extract(
             markdown_text = f"# {file.filename}\n\n(無法提取 PDF 文字層)"
 
         dois = extract_dois_from_text(markdown_text)
-        sam_data, usage_info = process_paper_markdown(
+        seen_dois = {d["doi"].lower() for d in dois}
+
+        res_dict, usage_info = process_paper_markdown(
             markdown_text,
             api_key=api_key,
             provider=provider,
             model_name=model_name,
             return_usage=True
         )
+
+        sam_data = res_dict.get("sam_dataset", [])
+        ai_dois = res_dict.get("reference_dois", [])
+
+        for ai_item in ai_dois:
+            if isinstance(ai_item, dict):
+                doi_val = clean_doi(ai_item.get("doi", ""))
+                ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
+            else:
+                doi_val = clean_doi(str(ai_item))
+                ctx_val = f"AI 特徵擷取 ({model_name})"
+
+            if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
+                seen_dois.add(doi_val.lower())
+                dois.append({
+                    "doi": doi_val,
+                    "url": f"https://doi.org/{doi_val}",
+                    "line_number": len(dois) + 1,
+                    "context": ctx_val,
+                    "in_reference_section": True
+                })
         
         return JSONResponse(content={
             "filename": file.filename,
