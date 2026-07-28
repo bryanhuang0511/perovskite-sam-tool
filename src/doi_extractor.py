@@ -57,7 +57,7 @@ def resolve_citation_with_habanero(citation_str: str) -> Optional[Dict[str, Any]
         url = "https://api.crossref.org/works"
         params = {"query.bibliographic": clean_text, "rows": 1}
         headers = {"User-Agent": "PerovskiteSAMTool/1.0 (mailto:perovskitesamtool@gmail.com)"}
-        res = requests.get(url, params=params, headers=headers, timeout=3.5)
+        res = requests.get(url, params=params, headers=headers, timeout=2.5)
         if res.status_code == 200:
             items = res.json().get("message", {}).get("items", [])
             if items:
@@ -130,8 +130,8 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
         if len(clean_ref) >= 15:
             valid_entries.append((idx, clean_ref[:250]))
 
-    # Perform Concurrent API requests with 50 parallel workers
-    with ThreadPoolExecutor(max_workers=50) as executor:
+    # Perform Concurrent API requests with 20 parallel workers for serverless stability
+    with ThreadPoolExecutor(max_workers=20) as executor:
         future_to_entry = {}
         for idx, clean_ref in valid_entries:
             doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
@@ -152,7 +152,7 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
                 future_to_entry[future] = (idx, clean_ref)
 
         try:
-            for future in as_completed(future_to_entry, timeout=5.5):
+            for future in as_completed(future_to_entry, timeout=4.5):
                 try:
                     res_obj = future.result()
                     if res_obj and res_obj.get("doi"):
@@ -210,7 +210,7 @@ def extract_all_reference_dois_with_ai(
 請幫我提取並還原出【每一條】文獻的純文字 DOI（格式如 10.1016/j.solmat.2026.114214）。
 
 References 內容：
-{ref_text_block}
+{ref_text_block[:35000]}
 
 請回傳純 JSON 陣列：
 [
