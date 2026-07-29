@@ -15,11 +15,11 @@ if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
 try:
-    from src.doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai
+    from src.doi_extractor import extract_dois_from_text, clean_doi
     from src.sam_extractor import process_paper_markdown
     from src.excel_exporter import generate_sam_excel
 except ImportError:
-    from doi_extractor import extract_dois_from_text, clean_doi, extract_all_reference_dois_with_ai
+    from doi_extractor import extract_dois_from_text, clean_doi
     from sam_extractor import process_paper_markdown
     from excel_exporter import generate_sam_excel
 
