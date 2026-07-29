@@ -41,7 +41,7 @@ SYSTEM_PROMPT = """
 
 請閱讀整篇論文（包含正文敘述、實驗章節 Experimental Methods、補充資訊 SI、表格、腳註與文末 References 參考文獻章節）。
 
-請回傳一個包含 `sam_dataset` 陣列與 `reference_dois` 陣列的 JSON 物件：
+請回傳一個包含 `sam_dataset` 陣列的 JSON 物件：
 
 {
   "sam_dataset": [
@@ -85,12 +85,6 @@ SYSTEM_PROMPT = """
         "energy_e": "red"
       }
     }
-  ],
-  "reference_dois": [
-    {
-      "doi": "10.1016/j.nanoen.2023.108210",
-      "context": "(1) Ullah et al., Nano Energy 2023"
-    }
   ]
 }
 
@@ -104,7 +98,6 @@ SYSTEM_PROMPT = """
 核心原則：
 1. 擷取【當前論文】內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
-3. 在 `reference_dois` 陣列中，請列出【當前論文】文末 References 參考文獻章節中【所有】引用文獻的 DOI 號碼（純文字 10.xxxx/xxxx 格式）。
 """
 
 def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
