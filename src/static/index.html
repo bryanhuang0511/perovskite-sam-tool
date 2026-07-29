@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
     <style>
         :root {
             --bg-dark: #0f172a;
@@ -447,16 +448,120 @@
         }
 
         .markdown-view {
-            background: var(--bg-dark);
+            background: var(--bg-card);
             border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 1.2rem;
+            border-radius: 12px;
+            padding: 2rem;
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 0.95rem;
+            color: #cbd5e1;
+            max-height: 700px;
+            overflow-y: auto;
+            line-height: 1.7;
+        }
+
+        .markdown-view.raw-mode {
             font-family: 'JetBrains Mono', monospace;
             font-size: 0.85rem;
-            color: #cbd5e1;
-            max-height: 600px;
-            overflow-y: auto;
             white-space: pre-wrap;
+            background: var(--bg-dark);
+        }
+
+        .markdown-view h1, .markdown-view h2, .markdown-view h3, .markdown-view h4 {
+            color: #f8fafc;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            font-weight: 700;
+        }
+
+        .markdown-view h1 {
+            font-size: 1.6rem;
+            background: linear-gradient(135deg, #818cf8 0%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        .markdown-view h2 {
+            font-size: 1.3rem;
+            color: #38bdf8;
+            border-bottom: 1px dashed var(--border-color);
+            padding-bottom: 0.3rem;
+        }
+
+        .markdown-view h3 {
+            font-size: 1.1rem;
+            color: var(--accent-teal);
+        }
+
+        .markdown-view p {
+            margin-bottom: 1rem;
+        }
+
+        .markdown-view ul, .markdown-view ol {
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .markdown-view li {
+            margin-bottom: 0.4rem;
+        }
+
+        .markdown-view blockquote {
+            border-left: 4px solid var(--accent-primary);
+            background: rgba(99, 102, 241, 0.1);
+            padding: 0.75rem 1.2rem;
+            border-radius: 0 8px 8px 0;
+            margin: 1rem 0;
+            font-style: italic;
+            color: #cbd5e1;
+        }
+
+        .markdown-view code {
+            font-family: 'JetBrains Mono', monospace;
+            background: #0f172a;
+            color: #38bdf8;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .markdown-view pre {
+            background: #0f172a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+
+        .markdown-view pre code {
+            background: transparent;
+            padding: 0;
+            color: #e2e8f0;
+        }
+
+        .markdown-view table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+
+        .markdown-view th, .markdown-view td {
+            border: 1px solid var(--border-color);
+            padding: 0.6rem 0.8rem;
+            text-align: left;
+        }
+
+        .markdown-view th {
+            background: rgba(99, 102, 241, 0.2);
+            color: #818cf8;
+        }
+
+        .markdown-view a {
+            color: #38bdf8;
+            text-decoration: underline;
         }
 
         .toast {
@@ -581,6 +686,13 @@
             </div>
 
             <div class="tab-content" id="mdTab">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;">
+                    <span style="font-size:0.9rem; color:var(--text-muted); font-weight:600;">📝 論文 Markdown 解析內容預覽</span>
+                    <div style="display:flex; gap:0.5rem;">
+                        <button class="btn btn-primary" id="mdViewRenderedBtn" onclick="setMarkdownViewMode('rendered')">👁️ 視覺化 HTML 預覽</button>
+                        <button class="btn" id="mdViewRawBtn" onclick="setMarkdownViewMode('raw')">💻 純文字 Markdown</button>
+                    </div>
+                </div>
                 <div class="markdown-view" id="markdownPreview"></div>
             </div>
         </div>
@@ -894,32 +1006,73 @@
                 doiList.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 2rem;">未在內文中偵測到 Reference DOI</div>`;
             } else {
                 doiList.innerHTML = currentExtractedData.dois.map((item, i) => {
+                    const hasDoi = item.has_doi !== false && item.url !== "";
                     const statusTag = item.ai_status || item.verification || '✅ Habanero/Crossref 已驗證';
+                    const badgeStyle = hasDoi 
+                        ? 'background:rgba(20, 184, 166, 0.2); color:#2dd4bf; border:1px solid #14b8a6;'
+                        : 'background:rgba(148, 163, 184, 0.15); color:#94a3b8; border:1px solid #475569;';
+                    const doiTitleStyle = hasDoi ? 'color:#38bdf8;' : 'color:#94a3b8; font-style:italic;';
+                    const searchQuery = hasDoi ? item.doi : item.context;
+
                     return `
                     <div class="doi-item">
                         <div class="doi-info">
                             <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
-                                <div class="doi-pure-text">#${i+1}. ${item.doi}</div>
-                                <span style="font-size:0.75rem; background:rgba(20, 184, 166, 0.2); color:#2dd4bf; border:1px solid #14b8a6; padding:0.15rem 0.6rem; border-radius:12px; font-weight:600;">
+                                <div class="doi-pure-text" style="${doiTitleStyle}">#${item.line_number || (i+1)}. ${escapeHtml(item.doi)}</div>
+                                <span style="font-size:0.75rem; padding:0.15rem 0.6rem; border-radius:12px; font-weight:600; ${badgeStyle}">
                                     ${escapeHtml(statusTag)}
                                 </span>
                             </div>
-                            <div class="doi-context">Line ${item.line_number}: ${escapeHtml(item.context)}</div>
+                            <div class="doi-context">${escapeHtml(item.context)}</div>
                         </div>
                         <div class="doi-btn-group">
-                            <button class="btn" onclick="copyToClipboard('${item.doi}', '已複製純文字 DOI: ${item.doi}')">📋 複製 DOI</button>
-                            <button class="btn" onclick="window.open('https://scholar.google.com/scholar?q=${encodeURIComponent(item.doi)}', '_blank')">🔍 Google 學術搜尋</button>
+                            ${hasDoi 
+                                ? `<button class="btn" onclick="copyToClipboard('${escapeHtml(item.doi)}', '已複製純文字 DOI: ${escapeHtml(item.doi)}')">📋 複製 DOI</button>`
+                                : `<button class="btn" style="opacity:0.5; cursor:not-allowed;" disabled>不可複製 (無 DOI)</button>`
+                            }
+                            <button class="btn" onclick="window.open('https://scholar.google.com/scholar?q=${encodeURIComponent(searchQuery)}', '_blank')">🔍 Google 學術搜尋</button>
                         </div>
                     </div>
                     `;
                 }).join('');
             }
 
-            document.getElementById('markdownPreview').innerText = currentExtractedData.markdown;
+            setMarkdownViewMode(currentMdViewMode);
+        }
+
+        let currentMdViewMode = 'rendered';
+
+        function setMarkdownViewMode(mode) {
+            currentMdViewMode = mode;
+            const previewEl = document.getElementById('markdownPreview');
+            const renderedBtn = document.getElementById('mdViewRenderedBtn');
+            const rawBtn = document.getElementById('mdViewRawBtn');
+
+            if (!previewEl) return;
+
+            if (mode === 'rendered') {
+                if (renderedBtn) renderedBtn.classList.add('btn-primary');
+                if (rawBtn) rawBtn.classList.remove('btn-primary');
+                previewEl.classList.remove('raw-mode');
+                if (typeof marked !== 'undefined' && currentExtractedData.markdown) {
+                    try {
+                        previewEl.innerHTML = marked.parse(currentExtractedData.markdown);
+                    } catch (e) {
+                        previewEl.innerText = currentExtractedData.markdown;
+                    }
+                } else {
+                    previewEl.innerText = currentExtractedData.markdown || '';
+                }
+            } else {
+                if (rawBtn) rawBtn.classList.add('btn-primary');
+                if (renderedBtn) renderedBtn.classList.remove('btn-primary');
+                previewEl.classList.add('raw-mode');
+                previewEl.innerText = currentExtractedData.markdown || '';
+            }
         }
 
         function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
 
         function switchTab(tabId) {

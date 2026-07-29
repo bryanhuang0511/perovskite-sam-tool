@@ -98,7 +98,7 @@ async def extract_text_sam(payload: dict):
         markdown_text = safe_truncate_paper_text(raw_markdown)
 
         dois = extract_dois_from_text(markdown_text)
-        seen_dois = {d["doi"].lower() for d in dois}
+        seen_dois = {d["doi"].lower() for d in dois if d.get("has_doi")}
 
         res_dict, usage_info = process_paper_markdown(
             markdown_text,
@@ -111,35 +111,6 @@ async def extract_text_sam(payload: dict):
         )
 
         sam_data = res_dict.get("sam_dataset", [])
-        ai_dois = res_dict.get("reference_dois", [])
-
-        if api_key and api_key.strip():
-            try:
-                ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
-                if len(ai_all) > len(dois):
-                    dois = ai_all
-                    seen_dois = {d["doi"].lower() for d in dois}
-            except Exception as e:
-                print(f"[AI All DOIs Error]: {e}")
-
-        for ai_item in ai_dois:
-            if isinstance(ai_item, dict):
-                doi_val = clean_doi(ai_item.get("doi", ""))
-                ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
-            else:
-                doi_val = clean_doi(str(ai_item))
-                ctx_val = f"AI 特徵擷取 ({model_name})"
-
-            if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
-                seen_dois.add(doi_val.lower())
-                dois.append({
-                    "doi": doi_val,
-                    "url": f"https://doi.org/{doi_val}",
-                    "line_number": len(dois) + 1,
-                    "context": ctx_val,
-                    "in_reference_section": True,
-                    "verification": "AI Extracted"
-                })
 
         for d in dois:
             if "ai_status" not in d:
@@ -206,36 +177,6 @@ async def convert_and_extract(
         )
 
         sam_data = res_dict.get("sam_dataset", [])
-        ai_dois = res_dict.get("reference_dois", [])
-
-        if api_key and api_key.strip():
-            try:
-                ai_all = extract_all_reference_dois_with_ai(markdown_text, api_key.strip(), model_name)
-                if len(ai_all) > len(dois):
-                    dois = ai_all
-                    seen_dois = {d["doi"].lower() for d in dois}
-            except Exception as e:
-                print(f"[AI All DOIs Error]: {e}")
-
-        for ai_item in ai_dois:
-            if isinstance(ai_item, dict):
-                doi_val = clean_doi(ai_item.get("doi", ""))
-                ctx_val = ai_item.get("context", f"AI 特徵擷取 ({model_name})")
-            else:
-                doi_val = clean_doi(str(ai_item))
-                ctx_val = f"AI 特徵擷取 ({model_name})"
-
-            if doi_val and doi_val.startswith("10.") and "/" in doi_val and doi_val.lower() not in seen_dois:
-                seen_dois.add(doi_val.lower())
-                dois.append({
-                    "doi": doi_val,
-                    "url": f"https://doi.org/{doi_val}",
-                    "line_number": len(dois) + 1,
-                    "context": ctx_val,
-                    "in_reference_section": True,
-                    "verification": "AI Extracted"
-                })
-
         for d in dois:
             if "ai_status" not in d:
                 d["ai_verified"] = True

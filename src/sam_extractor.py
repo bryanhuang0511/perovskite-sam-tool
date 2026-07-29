@@ -94,6 +94,13 @@ SYSTEM_PROMPT = """
   ]
 }
 
+【⚠️ 數值精確度嚴格指令 (嚴禁四捨五入/忽略小數點)】：
+1. 提取所有數值 (如 PCE, concentration, energy_e, Cs, FA, MA, Pb, Sn, I, Br, Cl, 莫耳比例, 濃度, 效率等) 時，必須【100% 保持論文原文出現的完整小數位數】！
+2. 嚴禁自行進行四捨五入、無條件捨去、或取整數 (例如原文寫 22.84% 或 0.005 mg/mL，必須填寫 22.84 與 0.005，絕對不能簡化為 23 或 0)！
+3. 若原文中記載為小數或比例，請精確保留所有有效位數 (例如 0.025, 0.975, 0.05, 22.84)。
+4. 若 PCE 或數值包含小數位 (例如 23.0)，請輸出浮點數 `23.0` 或字串 `"23.0"`，嚴禁截斷為整數 `23`！
+5. 必須仔細閱讀正文 Experimental Methods、SI 補充資訊與表格，擷取論文中記載的 SAM 濃度 (concentration)、溶劑 (ethanol, toluene, ipa, thf 等) 與鈣鈦礦組成成分 (Cs, FA, MA, Pb, Sn, I, Br, Cl)，不可將內文已有記載的特徵全填 0！
+
 核心原則：
 1. 擷取【當前論文】內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
@@ -205,6 +212,31 @@ def extract_sam_data_with_openai_compatible(
 
     raise RuntimeError("無法解析模型 JSON 回傳。")
 
+def post_process_sam_dataset(sam_dataset: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Post-process SAM dataset to auto-fill SMILES and ensure float precision consistency."""
+    processed = []
+    for item in sam_dataset:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        mat_name = str(row.get("sam_material", "")).strip()
+        
+        # 1. Auto-fill SMILES if empty
+        if not row.get("smiles") or not str(row["smiles"]).strip():
+            for known_name, smiles_val in KNOWN_SAM_SMILES.items():
+                if known_name.lower() in mat_name.lower():
+                    row["smiles"] = smiles_val
+                    break
+
+        # 2. Preserve float precision representation for PCE and concentration
+        pce_val = row.get("pce")
+        if isinstance(pce_val, (int, float)):
+            if isinstance(pce_val, int):
+                row["pce"] = float(pce_val)
+
+        processed.append(row)
+    return processed
+
 def process_paper_markdown(
     markdown_text: str,
     api_key: Optional[str] = None,
@@ -226,6 +258,9 @@ def process_paper_markdown(
     else:
         res_dict = {"sam_dataset": [], "reference_dois": []}
         usage_info = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "model_used": "local", "provider": "rule-based"}
+
+    if "sam_dataset" in res_dict and isinstance(res_dict["sam_dataset"], list):
+        res_dict["sam_dataset"] = post_process_sam_dataset(res_dict["sam_dataset"])
 
     if return_usage:
         return res_dict, usage_info

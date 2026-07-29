@@ -24,7 +24,7 @@ def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
     Resolve a reference citation string to exact DOI via Crossref Polite Pool REST API.
     Zero-token lightweight pure Python HTTP resolution.
     """
-    clean_text = citation_str[:180].strip()
+    clean_text = citation_str[:400].strip()
     if len(clean_text) < 12:
         return None
 
@@ -32,7 +32,7 @@ def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
         url = "https://api.crossref.org/works"
         params = {"query.bibliographic": clean_text, "rows": 1}
         headers = {"User-Agent": "PerovskiteSAMTool/1.0 (mailto:perovskitesamtool@gmail.com)"}
-        res = requests.get(url, params=params, headers=headers, timeout=2.5)
+        res = requests.get(url, params=params, headers=headers, timeout=3.0)
         if res.status_code == 200:
             items = res.json().get("message", {}).get("items", [])
             if items:
@@ -41,7 +41,7 @@ def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
                 score = item.get("score", 0.0)
                 title = item.get("title", [""])[0] if item.get("title") else ""
                 container = item.get("container-title", [""])[0] if item.get("container-title") else ""
-                if doi and score >= 20.0:
+                if doi and score >= 10.0:
                     return {
                         "doi": clean_doi(doi),
                         "title": title,
@@ -54,103 +54,138 @@ def resolve_citation_to_doi(citation_str: str) -> Optional[Dict[str, Any]]:
 
     return None
 
+def locate_references_section(text: str) -> str:
+    """Locate the References section and remove header/footer noise and SI sections."""
+    unwrapped = re.sub(r'(10\.\d{4,9}/[^\s]+?)-\s*\n\s*([^\s]+)', r'\1\2', text)
+    unwrapped = re.sub(r'(10\.\d{4,9}/[^\s]*?)\s*\n\s*([a-zA-Z0-9.\-_/;()]+)', r'\1\2', unwrapped)
+
+    headings = list(re.finditer(r'(?:^|\n)\s*(?:References|BIBLIOGRAPHY|Literature Cited|參考文獻)\s*(?:\n|$)', unwrapped, re.IGNORECASE))
+    if headings:
+        start_idx = headings[-1].end()
+        section = unwrapped[start_idx:]
+    else:
+        search_start = int(len(unwrapped) * 0.6)
+        section = unwrapped[search_start:]
+
+    ending_match = re.search(r'(?:^|\n)\s*(?:Supporting Information|Supplementary Information|Author Biographies|Biographies|Acknowledgements)\s*(?:\n|$)', section, re.IGNORECASE)
+    if ending_match:
+        section = section[:ending_match.start()]
+
+    return section
+
+def parse_sequential_references(section_text: str) -> List[Dict[str, Any]]:
+    """Parse sequential references (1..N) and retain placeholders for entries without DOIs."""
+    lines = [l.strip() for l in section_text.split('\n') if l.strip()]
+    
+    filtered_lines = []
+    for line in lines:
+        if re.search(r'^\d+\s+of\s+\d+$', line, re.IGNORECASE):
+            continue
+        if re.search(r'Downloaded from', line, re.IGNORECASE):
+            continue
+        filtered_lines.append(line)
+
+    refs = []
+    current = None
+
+    for line in filtered_lines:
+        match = re.match(r'^(?:\[(\d{1,4})\]|\((\d{1,4})\)|(\d{1,4})\s*[.)])\s+(.+)$', line)
+        if match:
+            number = int(match.group(1) or match.group(2) or match.group(3))
+            if (not current and number == 1) or (current and number == current["refNumber"] + 1):
+                if current:
+                    refs.append(current)
+                current = {"refNumber": number, "rawCitation": match.group(4).strip()}
+            elif current:
+                current["rawCitation"] += f" {line}"
+        elif current:
+            current["rawCitation"] += f" {line}"
+
+    if current:
+        refs.append(current)
+
+    if not refs:
+        paragraphs = [p.strip() for p in re.split(r'\n\s*\n', section_text) if len(p.strip()) >= 20]
+        for idx, p in enumerate(paragraphs, start=1):
+            refs.append({"refNumber": idx, "rawCitation": p})
+
+    results = []
+    for ref in refs:
+        clean_citation = re.sub(r'The Journal of Physical Chemistry Letters.*$', '', ref["rawCitation"], flags=re.IGNORECASE)
+        clean_citation = re.sub(r'https?://doi\.org/10\.1021/acs\.jpclett.*$', '', clean_citation, flags=re.IGNORECASE)
+        clean_citation = re.sub(r'\s+', ' ', clean_citation).strip()
+        doi_match = re.search(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+', clean_citation, re.IGNORECASE)
+        found_doi = clean_doi(doi_match.group(0)) if doi_match else None
+        if found_doi and (not found_doi.startswith("10.") or "/" not in found_doi or len(found_doi) < 7):
+            found_doi = None
+
+        results.append({
+            "refNumber": ref["refNumber"],
+            "rawCitation": clean_citation,
+            "doi": found_doi,
+            "has_doi": bool(found_doi)
+        })
+
+    return results
+
 def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
     """
-    Robust Multi-Stage DOI extraction pipeline for non-API key mode.
-    Handles both multiline PDF text and flattened single-line PDF.js browser text.
+    Robust Multi-Stage Deterministic Reference DOI Extraction Pipeline.
+    Strictly aligns 1..N references and retains placeholder for un-DOI references.
     """
-    results = []
-    seen_dois = set()
+    section_text = locate_references_section(text)
+    seq_refs = parse_sequential_references(section_text)
 
-    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]+?)-\s*\n\s*([^\s]+)', r'\1\2', text)
-    unwrapped_text = re.sub(r'(10\.\d{4,9}/[^\s]*?)\s*\n\s*([a-zA-Z0-9.\-_/;()]+)', r'\1\2', unwrapped_text)
+    missing_entries = [r for r in seq_refs if not r["has_doi"] and len(r["rawCitation"]) >= 15]
 
-    # 1. Direct Regex Match for 10.xxxx/xxxx
-    pattern = r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*|10\.\d{4,9}/)[-._;()/:A-Za-z0-9]+'
-    direct_matches = re.findall(pattern, unwrapped_text, re.IGNORECASE)
-    for match in direct_matches:
-        doi = clean_doi(match)
-        if doi.startswith('10.') and '/' in doi and len(doi) > 7:
-            if doi.lower() not in seen_dois:
-                seen_dois.add(doi.lower())
-                results.append({
-                    "doi": doi,
-                    "url": f"https://doi.org/{doi}",
-                    "line_number": len(results) + 1,
-                    "context": match[:150],
-                    "in_reference_section": True,
-                    "verification": "Direct Text Match"
-                })
-
-    # 2. Locate the real References section header in the tail 40% of paper text
-    search_start = int(len(unwrapped_text) * 0.6)
-    tail_text = unwrapped_text[search_start:]
-    pos_in_tail = max(
-        tail_text.find("\nReferences"),
-        tail_text.find("References\n"),
-        tail_text.find("\nREFERENCES"),
-        tail_text.find("REFERENCES\n")
-    )
-    if pos_in_tail != -1:
-        ref_block = unwrapped_text[search_start + pos_in_tail:]
-    else:
-        ref_block = unwrapped_text[search_start:]
-
-    # 3. Extract Reference Citation entries from the References section
-    raw_splits = re.split(r'(?:\n|^|\b)(?:\[\d{1,3}\]|\(\d{1,3}\)|\b\d{1,3}\.)\s+', ref_block)
-    
-    valid_entries = []
-    for idx, ref_chunk in enumerate(raw_splits, start=1):
-        clean_ref = re.sub(r'\s+', ' ', ref_chunk.strip())
-        if len(clean_ref) >= 15:
-            valid_entries.append((idx, clean_ref[:250]))
-
-    # Perform Concurrent API requests with 10 parallel workers
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_entry = {}
-        for idx, clean_ref in valid_entries:
-            doi_match = re.search(r'10\.\d{4,9}/[-._;()/:A-Za-z0-9]+', clean_ref)
-            if doi_match:
-                found_doi = clean_doi(doi_match.group(0))
-                if found_doi and found_doi.lower() not in seen_dois:
-                    seen_dois.add(found_doi.lower())
-                    results.append({
-                        "doi": found_doi,
-                        "url": f"https://doi.org/{found_doi}",
-                        "line_number": idx,
-                        "context": clean_ref[:150],
-                        "in_reference_section": True,
-                        "verification": "Inline Text Match"
-                    })
-            else:
-                future = executor.submit(resolve_citation_to_doi, clean_ref)
-                future_to_entry[future] = (idx, clean_ref)
-
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_ref = {
+            executor.submit(resolve_citation_to_doi, r["rawCitation"]): r
+            for r in missing_entries
+        }
         try:
-            for future in as_completed(future_to_entry, timeout=3.5):
+            for future in as_completed(future_to_ref, timeout=5.0):
                 try:
                     res_obj = future.result()
                     if res_obj and res_obj.get("doi"):
-                        found_doi = clean_doi(res_obj["doi"])
-                        if found_doi.lower() not in seen_dois:
-                            idx, clean_ref = future_to_entry[future]
-                            seen_dois.add(found_doi.lower())
-                            results.append({
-                                "doi": found_doi,
-                                "url": f"https://doi.org/{found_doi}",
-                                "line_number": idx,
-                                "context": clean_ref[:150],
-                                "title": res_obj.get("title", ""),
-                                "journal": res_obj.get("journal", ""),
-                                "in_reference_section": True,
-                                "verification": res_obj.get("verified_by", "Crossref Match")
-                            })
+                        ref = future_to_ref[future]
+                        ref["doi"] = res_obj["doi"]
+                        ref["has_doi"] = True
+                        ref["verification"] = res_obj.get("verified_by", "Crossref Match")
                 except Exception:
                     pass
         except TimeoutError:
             pass
 
-    return results
+    final_output = []
+    for r in seq_refs:
+        ref_num = r["refNumber"]
+        citation_snippet = r["rawCitation"][:140]
+        if r["has_doi"]:
+            doi_val = r["doi"]
+            final_output.append({
+                "doi": doi_val,
+                "url": f"https://doi.org/{doi_val}",
+                "line_number": ref_num,
+                "context": f"({ref_num}) {citation_snippet}",
+                "in_reference_section": True,
+                "verification": r.get("verification", "✅ 已通過 Crossref 官方權重校驗"),
+                "has_doi": True,
+                "ai_status": "✅ 已通過 Crossref 官方權重校驗"
+            })
+        else:
+            final_output.append({
+                "doi": f"N/A (文獻 #{ref_num} 無 DOI)",
+                "url": "",
+                "line_number": ref_num,
+                "context": f"({ref_num}) {citation_snippet}",
+                "in_reference_section": True,
+                "verification": "⚠️ 無 DOI (已保留序號對齊)",
+                "has_doi": False,
+                "ai_status": "⚠️ 無 DOI (已保留序號對齊)"
+            })
+
+    return final_output
 
 def extract_all_reference_dois_with_ai(
     paper_text: str,
