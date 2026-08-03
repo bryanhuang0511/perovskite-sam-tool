@@ -63,13 +63,11 @@ def safe_truncate_paper_text(text: str, max_chars: int = 55000) -> str:
     return text[:35000] + "\n\n...[已壓縮超長內文]...\n\n" + text[-20000:]
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/index.html", response_class=HTMLResponse)
 @app.get("/api", response_class=HTMLResponse)
 @app.get("/api/index", response_class=HTMLResponse)
 @app.get("/api/index.py", response_class=HTMLResponse)
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-def index(full_path: str = ""):
-    if full_path and (full_path.startswith("api/extract") or full_path.startswith("api/convert") or full_path.startswith("api/export")):
-        raise HTTPException(status_code=404, detail=f"API Path /{full_path} Not Found")
+def index():
     candidates = [
         os.path.join(static_dir, "index.html"),
         os.path.join(base_dir, "static", "index.html"),
