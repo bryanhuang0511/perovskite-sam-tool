@@ -251,17 +251,19 @@ def process_paper_markdown(
     provider: str = "gemini",
     model_name: str = "gemini-3.6-flash",
     api_base: str = "https://api.openai.com/v1",
-    return_usage: bool = False
+    return_usage: bool = False,
+    si_markdown_text: Optional[str] = None
 ) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, Any]]]:
     """Main extraction router returning sam_dataset and reference_dois."""
     if api_key and api_key.strip():
         if provider == "openai" or provider == "deepseek" or provider == "custom":
             base_url = api_base if api_base and api_base.strip() else ("https://api.deepseek.com/v1" if provider == "deepseek" else "https://api.openai.com/v1")
             target_model = model_name if model_name and model_name.strip() else ("deepseek-chat" if provider == "deepseek" else "gpt-4o-mini")
-            res_dict, usage_info = extract_sam_data_with_openai_compatible(markdown_text, api_key.strip(), target_model, base_url)
+            full_text = markdown_text + (f"\n\n【Supporting Information (SI)】：\n{si_markdown_text}" if si_markdown_text else "")
+            res_dict, usage_info = extract_sam_data_with_openai_compatible(full_text, api_key.strip(), target_model, base_url)
         else:
             target_model = model_name.strip() if model_name and model_name.strip() else "gemini-3.6-flash"
-            res_dict, usage_info = extract_sam_data_with_gemini(markdown_text, api_key.strip(), target_model, images_base64)
+            res_dict, usage_info = extract_sam_data_with_gemini(markdown_text, api_key.strip(), target_model, images_base64, si_markdown_text)
     else:
         res_dict = {"sam_dataset": [], "reference_dois": []}
         usage_info = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "model_used": "local", "provider": "rule-based"}
