@@ -95,6 +95,17 @@ SYSTEM_PROMPT = """
 4. 若 PCE 或數值包含小數位 (例如 23.0)，請輸出浮點數 `23.0` 或字串 `"23.0"`，嚴禁截斷為整數 `23`！
 5. 必須仔細閱讀正文 Experimental Methods、SI 補充資訊與表格，擷取論文中記載的 SAM 濃度 (concentration)、溶劑 (ethanol, toluene, ipa, thf 等) 與鈣鈦礦組成成分 (Cs, FA, MA, Pb, Sn, I, Br, Cl)，不可將內文已有記載的特徵全填 0！
 
+【🎯 關鍵特徵欄位強效定位與解析指南 (Concentration / Energy_E / Wash)】：
+1. **Concentration (SAM 溶液濃度, mg/mL)**：
+   - 請務必至【Experimental Methods / Device Fabrication / Substrate Preparation】章節尋找關鍵字如 `dissolved in`, `concentration of`, `mg/mL`, `mM`, `mmol/L`, `0.5 mg/mL`, `3 mM`。
+   - 若記載為 `mM` 或 `mg/mL` (例如 0.5 mg/mL 或 3 mM)，請提取該數值，切勿直接填 0！
+2. **Energy_E (能階 / 工作函數 / 結合能, eV)**：
+   - 請搜尋論文正文、UPS/XPS 實驗敘述、能階圖與圖表說明 (Figure Captions) 中提及的 `WF` (Work Function), `HOMO`, `VBM`, `binding energy`, `energy level`, `eV`, `dipole shift` 等數值 (例如 `0.25`, `5.14`, `-5.3`)。
+3. **Wash (溶劑洗滌 1/0)**：
+   - 尋找正文中是否有 `rinsed with`, `washed with`, `spin-flushed with` (如以 ethanol/IPA 沖洗單分子層)。有洗滌填 `1`，未洗滌或未提及填 `0`。
+4. **雙欄排版 (Two-Column Layout) 語意關聯補償**：
+   - 本文可能包含雙欄排版 (Two-Column Layout)，若文字跨欄或斷行，請跨行整合語意，將 SAM 材料名稱、濃度、洗滌溶劑與 PCE 效率正確歸屬至同一筆 SAM 數據點！
+
 核心原則：
 1. 擷取【當前論文】內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
 2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
