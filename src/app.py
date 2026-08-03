@@ -88,6 +88,7 @@ async def extract_text_sam(payload: dict):
     """
     try:
         raw_markdown = payload.get("markdown", "")
+        si_markdown = payload.get("si_markdown", "")
         filename = payload.get("filename", "paper.pdf")
         api_key = payload.get("api_key", None)
         images_base64 = payload.get("images", [])
@@ -100,6 +101,7 @@ async def extract_text_sam(payload: dict):
             raise HTTPException(status_code=400, detail="未收到論文文字內容。")
 
         markdown_text = safe_truncate_paper_text(raw_markdown)
+        si_text = safe_truncate_paper_text(si_markdown) if si_markdown and si_markdown.strip() else None
 
         dois = extract_dois_from_text(markdown_text)
         seen_dois = {d["doi"].lower() for d in dois if d.get("has_doi")}
@@ -111,7 +113,8 @@ async def extract_text_sam(payload: dict):
             provider=provider,
             model_name=model_name,
             api_base=api_base,
-            return_usage=True
+            return_usage=True,
+            si_markdown_text=si_text
         )
 
         sam_data = res_dict.get("sam_dataset", [])

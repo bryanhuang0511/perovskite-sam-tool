@@ -111,13 +111,16 @@ SYSTEM_PROMPT = """
 2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
 """
 
-def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None, si_markdown_text: Optional[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Extract SAM dataset & Reference DOIs using Google Gemini API with stateless guarantee."""
     from google import genai
     from google.genai import types
     
     client = genai.Client(api_key=api_key)
     prompt = SYSTEM_PROMPT + f"\n\n【當前獨立論文 100% 全文內容】：\n{markdown_text}"
+    if si_markdown_text and si_markdown_text.strip():
+        prompt += f"\n\n【當前論文 Supporting Information (SI) 補充資訊全文 (包含 Table S1, S2 SMILES, S3 實驗條件與能階細節)】：\n{si_markdown_text[:35000]}"
+    
     contents = [prompt]
     
     if images_base64:

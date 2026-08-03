@@ -616,11 +616,20 @@
     </header>
 
     <main>
-        <div class="upload-card" id="dropZone">
-            <div class="upload-icon">📄</div>
-            <div class="upload-title">點擊上傳或將論文 PDF 拖曳至此</div>
-            <div class="upload-subtitle">支援 SAM 鈣鈦礦太陽能電池論文 PDF (自動提取純文字 DOI 列表與數據點)</div>
-            <input type="file" id="fileInput" accept=".pdf" />
+        <div class="upload-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+            <div class="upload-card" id="dropZoneMain">
+                <div class="upload-icon">📄</div>
+                <div class="upload-title">上傳【論文主文 PDF】</div>
+                <div class="upload-subtitle" id="mainFileSubtitle">點擊上傳或拖曳主文 PDF (必填)</div>
+                <input type="file" id="fileInputMain" accept=".pdf" style="display:none;" />
+            </div>
+
+            <div class="upload-card" id="dropZoneSi" style="border-color: #38bdf8;">
+                <div class="upload-icon" style="background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">📎</div>
+                <div class="upload-title">上傳【補充資訊 SI PDF】</div>
+                <div class="upload-subtitle" id="siFileSubtitle">點擊上傳或拖曳 SI 補充檔案 (選填補助分析)</div>
+                <input type="file" id="fileInputSi" accept=".pdf" style="display:none;" />
+            </div>
         </div>
 
         <div class="status-banner" id="statusBanner">
@@ -744,26 +753,59 @@
             localStorage.setItem('llm_custom_model', customModelInput.value.trim());
         });
 
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('fileInput');
+        let currentMainFile = null;
+        let currentSiFile = null;
 
-        dropZone.addEventListener('click', () => fileInput.click());
-        dropZone.addEventListener('dragover', (e) => {
+        const dropZoneMain = document.getElementById('dropZoneMain');
+        const fileInputMain = document.getElementById('fileInputMain');
+        const dropZoneSi = document.getElementById('dropZoneSi');
+        const fileInputSi = document.getElementById('fileInputSi');
+
+        dropZoneMain.addEventListener('click', () => fileInputMain.click());
+        dropZoneMain.addEventListener('dragover', (e) => { e.preventDefault(); dropZoneMain.classList.add('dragover'); });
+        dropZoneMain.addEventListener('dragleave', () => dropZoneMain.classList.remove('dragover'));
+        dropZoneMain.addEventListener('drop', (e) => {
             e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
+            dropZoneMain.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) {
-                handleFileUpload(e.dataTransfer.files[0]);
+                currentMainFile = e.dataTransfer.files[0];
+                document.getElementById('mainFileSubtitle').innerText = `✅ 已載入主文: ${currentMainFile.name}`;
+                handleDualFileUpload();
+            }
+        });
+        fileInputMain.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                currentMainFile = e.target.files[0];
+                document.getElementById('mainFileSubtitle').innerText = `✅ 已載入主文: ${currentMainFile.name}`;
+                handleDualFileUpload();
             }
         });
 
-        fileInput.addEventListener('change', (e) => {
+        dropZoneSi.addEventListener('click', () => fileInputSi.click());
+        dropZoneSi.addEventListener('dragover', (e) => { e.preventDefault(); dropZoneSi.classList.add('dragover'); });
+        dropZoneSi.addEventListener('dragleave', () => dropZoneSi.classList.remove('dragover'));
+        dropZoneSi.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZoneSi.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                currentSiFile = e.dataTransfer.files[0];
+                document.getElementById('siFileSubtitle').innerText = `📎 已載入 SI 補充: ${currentSiFile.name}`;
+                if (currentMainFile) {
+                    handleDualFileUpload();
+                } else {
+                    alert('請先上傳論文主文 PDF，再進行 SI 補充分析！');
+                }
+            }
+        });
+        fileInputSi.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                handleFileUpload(e.target.files[0]);
+                currentSiFile = e.target.files[0];
+                document.getElementById('siFileSubtitle').innerText = `📎 已載入 SI 補充: ${currentSiFile.name}`;
+                if (currentMainFile) {
+                    handleDualFileUpload();
+                } else {
+                    alert('請先上傳論文主文 PDF，再進行 SI 補充分析！');
+                }
             }
         });
 
@@ -781,7 +823,6 @@
                     const currentY = item.transform ? item.transform[5] : null;
                     const cleanStr = item.str.trim();
 
-                    // Force line breaks on Y delta > 2.5 OR reference citation prefix [1], (1), 1.
                     if (lastY !== null && currentY !== null && Math.abs(currentY - lastY) > 2.5) {
                         pageText += "\n";
                     } else if (/^\[\d{1,3}\]/.test(cleanStr) || /^\(\d{1,3}\)/.test(cleanStr) || /^\d{1,3}\.\s/.test(cleanStr)) {
@@ -799,11 +840,8 @@
             return fullText;
         }
 
-        async function handleFileUpload(file) {
-            if (!file.name.toLowerCase().endsWith('.pdf')) {
-                alert('請選擇 PDF 格式之論文檔案！');
-                return;
-            }
+        async function handleDualFileUpload() {
+            if (!currentMainFile) return;
 
             // Mandatory Memory-Wipe & State Reset for fresh execution
             currentExtractedData = {
@@ -830,14 +868,21 @@
             statusBanner.style.display = 'flex';
             tabsContainer.style.display = 'none';
             tokenDashboard.style.display = 'none';
-            statusText.innerText = `正在獨立解析 PDF 內文並對照 Crossref Habanero 引擎 (${file.name})...`;
+            
+            const fileDesc = currentSiFile ? `${currentMainFile.name} + SI: ${currentSiFile.name}` : currentMainFile.name;
+            statusText.innerText = `正在獨立解析 PDF 內文與 SI 補充對照 Crossref Habanero 引擎 (${fileDesc})...`;
 
             const startTime = Date.now();
 
             try {
                 let markdownText = "";
+                let siMarkdownText = "";
+
                 try {
-                    markdownText = await extractPdfTextClientSide(file);
+                    markdownText = await extractPdfTextClientSide(currentMainFile);
+                    if (currentSiFile) {
+                        siMarkdownText = await extractPdfTextClientSide(currentSiFile);
+                    }
                 } catch (pdfErr) {
                     console.warn('Browser PDF text extraction failed:', pdfErr);
                 }
@@ -859,7 +904,6 @@
                     modelName = customModelInput.value.trim() || 'gemini-3.1-pro-preview';
                 }
 
-                // Append cache-busting timestamp param to enforce fresh API execution
                 const cacheBuster = `_ts=${Date.now()}`;
 
                 let response;
@@ -873,7 +917,9 @@
                         },
                         body: JSON.stringify({
                             markdown: markdownText,
-                            filename: file.name,
+                            si_markdown: siMarkdownText,
+                            filename: currentMainFile.name,
+                            si_filename: currentSiFile ? currentSiFile.name : "",
                             api_key: apiKey,
                             provider: provider,
                             model_name: modelName
