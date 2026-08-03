@@ -1148,7 +1148,7 @@
                                 ? `<button class="btn" onclick="copyToClipboard('${escapeHtml(item.doi)}', '已複製純文字 DOI: ${escapeHtml(item.doi)}')">📋 複製 DOI</button>`
                                 : `<button class="btn" style="opacity:0.5; cursor:not-allowed;" disabled>不可複製 (無 DOI)</button>`
                             }
-                            <button class="btn" onclick="window.open('https://scholar.google.com/scholar?q=${encodeURIComponent(searchQuery)}', '_blank')">🔍 Google 學術搜尋</button>
+                            <a href="https://scholar.google.com/scholar?q=${encodeURIComponent(searchQuery)}" target="_blank" rel="noopener noreferrer" class="btn" style="text-decoration: none; display: inline-flex; align-items: center;">🔍 Google 學術搜尋</a>
                         </div>
                     </div>
                     `;
