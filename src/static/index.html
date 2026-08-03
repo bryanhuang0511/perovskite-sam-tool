@@ -632,9 +632,12 @@
             </div>
         </div>
 
-        <div style="text-align: center; margin-bottom: 1.5rem;">
+        <div style="text-align: center; margin-bottom: 1.5rem; display: flex; justify-content: center; align-items: center; gap: 1rem; flex-wrap: wrap;">
             <button id="startExtractBtn" style="display: none; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: white; padding: 0.9rem 2.8rem; font-size: 1.1rem; font-weight: 700; border-radius: 12px; border: none; cursor: pointer; box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4); transition: all 0.3s ease;">
                 🚀 確認檔案無誤，開始 AI 數據擷取與對照
+            </button>
+            <button id="cancelResetBtn" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5; padding: 0.9rem 1.5rem; font-size: 1rem; font-weight: 600; border-radius: 12px; cursor: pointer;" onclick="resetAllUploadState()">
+                🗑️ 清除選取
             </button>
         </div>
 
@@ -677,6 +680,9 @@
                     </button>
                 </div>
                 <div class="action-btns">
+                    <button class="btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #fca5a5;" onclick="resetAllUploadState()">
+                        🔄 清除重置，解析下一篇
+                    </button>
                     <button class="btn" onclick="copyCurrentTabContent()">
                         📋 複製內容
                     </button>
@@ -767,15 +773,63 @@
         const dropZoneSi = document.getElementById('dropZoneSi');
         const fileInputSi = document.getElementById('fileInputSi');
         const startExtractBtn = document.getElementById('startExtractBtn');
+        const cancelResetBtn = document.getElementById('cancelResetBtn');
 
         function updateStartBtnState() {
             if (currentMainFile) {
                 const siTag = currentSiFile ? ` (+ SI: ${currentSiFile.name})` : '';
                 startExtractBtn.innerText = `🚀 確認檔案無誤，開始 AI 數據擷取與對照 (${currentMainFile.name}${siTag})`;
                 startExtractBtn.style.display = 'inline-block';
+                if (cancelResetBtn) cancelResetBtn.style.display = 'inline-block';
             } else {
                 startExtractBtn.style.display = 'none';
+                if (cancelResetBtn) cancelResetBtn.style.display = 'none';
             }
+        }
+
+        function resetAllUploadState() {
+            currentMainFile = null;
+            currentSiFile = null;
+            if (fileInputMain) fileInputMain.value = '';
+            if (fileInputSi) fileInputSi.value = '';
+
+            const mainSub = document.getElementById('mainFileSubtitle');
+            if (mainSub) {
+                mainSub.innerText = '點擊上傳或拖曳主文 PDF (必填)';
+                mainSub.style.color = '#94a3b8';
+            }
+            
+            const siSub = document.getElementById('siFileSubtitle');
+            if (siSub) {
+                siSub.innerText = '點擊上傳或拖曳 SI 補充檔案 (選填補助對照)';
+                siSub.style.color = '#94a3b8';
+            }
+
+            if (startExtractBtn) startExtractBtn.style.display = 'none';
+            if (cancelResetBtn) cancelResetBtn.style.display = 'none';
+
+            const statusBanner = document.getElementById('statusBanner');
+            const tabsContainer = document.getElementById('tabsContainer');
+            const tokenDashboard = document.getElementById('tokenDashboard');
+
+            if (statusBanner) statusBanner.style.display = 'none';
+            if (tabsContainer) tabsContainer.style.display = 'none';
+            if (tokenDashboard) tokenDashboard.style.display = 'none';
+
+            currentExtractedData = {
+                filename: "",
+                markdown: "",
+                sam_data: [],
+                dois: [],
+                usage_info: {}
+            };
+
+            document.getElementById('samCountBadge').innerText = '0';
+            document.getElementById('doiCountBadge').innerText = '0';
+            document.getElementById('samTableHeader').innerHTML = '';
+            document.getElementById('samTableBody').innerHTML = '';
+            document.getElementById('doiList').innerHTML = '';
+            document.getElementById('markdownPreview').innerText = '';
         }
 
         dropZoneMain.addEventListener('click', () => fileInputMain.click());
