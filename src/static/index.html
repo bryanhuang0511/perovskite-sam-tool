@@ -616,20 +616,26 @@
     </header>
 
     <main>
-        <div class="upload-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="upload-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.2rem;">
             <div class="upload-card" id="dropZoneMain">
                 <div class="upload-icon">📄</div>
-                <div class="upload-title">上傳【論文主文 PDF】</div>
-                <div class="upload-subtitle" id="mainFileSubtitle">點擊上傳或拖曳主文 PDF (必填)</div>
+                <div class="upload-title">1. 上傳【論文主文 PDF】</div>
+                <div class="upload-subtitle" id="mainFileSubtitle" style="color: #94a3b8; font-weight: 500;">點擊上傳或拖曳主文 PDF (必填)</div>
                 <input type="file" id="fileInputMain" accept=".pdf" style="display:none;" />
             </div>
 
             <div class="upload-card" id="dropZoneSi" style="border-color: #38bdf8;">
                 <div class="upload-icon" style="background: linear-gradient(135deg, #38bdf8 0%, #a855f7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">📎</div>
-                <div class="upload-title">上傳【補充資訊 SI PDF】</div>
-                <div class="upload-subtitle" id="siFileSubtitle">點擊上傳或拖曳 SI 補充檔案 (選填補助分析)</div>
+                <div class="upload-title">2. 上傳【補充資訊 SI PDF】</div>
+                <div class="upload-subtitle" id="siFileSubtitle" style="color: #94a3b8; font-weight: 500;">點擊上傳或拖曳 SI 補充檔案 (選填補助對照)</div>
                 <input type="file" id="fileInputSi" accept=".pdf" style="display:none;" />
             </div>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 1.5rem;">
+            <button id="startExtractBtn" style="display: none; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); color: white; padding: 0.9rem 2.8rem; font-size: 1.1rem; font-weight: 700; border-radius: 12px; border: none; cursor: pointer; box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4); transition: all 0.3s ease;">
+                🚀 確認檔案無誤，開始 AI 數據擷取與對照
+            </button>
         </div>
 
         <div class="status-banner" id="statusBanner">
@@ -760,6 +766,17 @@
         const fileInputMain = document.getElementById('fileInputMain');
         const dropZoneSi = document.getElementById('dropZoneSi');
         const fileInputSi = document.getElementById('fileInputSi');
+        const startExtractBtn = document.getElementById('startExtractBtn');
+
+        function updateStartBtnState() {
+            if (currentMainFile) {
+                const siTag = currentSiFile ? ` (+ SI: ${currentSiFile.name})` : '';
+                startExtractBtn.innerText = `🚀 確認檔案無誤，開始 AI 數據擷取與對照 (${currentMainFile.name}${siTag})`;
+                startExtractBtn.style.display = 'inline-block';
+            } else {
+                startExtractBtn.style.display = 'none';
+            }
+        }
 
         dropZoneMain.addEventListener('click', () => fileInputMain.click());
         dropZoneMain.addEventListener('dragover', (e) => { e.preventDefault(); dropZoneMain.classList.add('dragover'); });
@@ -769,15 +786,15 @@
             dropZoneMain.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) {
                 currentMainFile = e.dataTransfer.files[0];
-                document.getElementById('mainFileSubtitle').innerText = `✅ 已載入主文: ${currentMainFile.name}`;
-                handleDualFileUpload();
+                document.getElementById('mainFileSubtitle').innerText = `✅ 已選擇主文: ${currentMainFile.name}`;
+                updateStartBtnState();
             }
         });
         fileInputMain.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 currentMainFile = e.target.files[0];
-                document.getElementById('mainFileSubtitle').innerText = `✅ 已載入主文: ${currentMainFile.name}`;
-                handleDualFileUpload();
+                document.getElementById('mainFileSubtitle').innerText = `✅ 已選擇主文: ${currentMainFile.name}`;
+                updateStartBtnState();
             }
         });
 
@@ -789,24 +806,24 @@
             dropZoneSi.classList.remove('dragover');
             if (e.dataTransfer.files.length > 0) {
                 currentSiFile = e.dataTransfer.files[0];
-                document.getElementById('siFileSubtitle').innerText = `📎 已載入 SI 補充: ${currentSiFile.name}`;
-                if (currentMainFile) {
-                    handleDualFileUpload();
-                } else {
-                    alert('請先上傳論文主文 PDF，再進行 SI 補充分析！');
-                }
+                document.getElementById('siFileSubtitle').innerText = `📎 已選擇 SI 補充: ${currentSiFile.name}`;
+                updateStartBtnState();
             }
         });
         fileInputSi.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 currentSiFile = e.target.files[0];
-                document.getElementById('siFileSubtitle').innerText = `📎 已載入 SI 補充: ${currentSiFile.name}`;
-                if (currentMainFile) {
-                    handleDualFileUpload();
-                } else {
-                    alert('請先上傳論文主文 PDF，再進行 SI 補充分析！');
-                }
+                document.getElementById('siFileSubtitle').innerText = `📎 已選擇 SI 補充: ${currentSiFile.name}`;
+                updateStartBtnState();
             }
+        });
+
+        startExtractBtn.addEventListener('click', () => {
+            if (!currentMainFile) {
+                alert('請先點擊上傳主文 PDF 檔案！');
+                return;
+            }
+            handleDualFileUpload();
         });
 
         async function extractPdfTextClientSide(file) {
