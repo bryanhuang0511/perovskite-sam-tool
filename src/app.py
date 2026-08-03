@@ -63,6 +63,9 @@ def safe_truncate_paper_text(text: str, max_chars: int = 55000) -> str:
     return text[:35000] + "\n\n...[已壓縮超長內文]...\n\n" + text[-20000:]
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/api", response_class=HTMLResponse)
+@app.get("/api/index", response_class=HTMLResponse)
+@app.get("/api/index.py", response_class=HTMLResponse)
 def index():
     candidates = [
         os.path.join(static_dir, "index.html"),
