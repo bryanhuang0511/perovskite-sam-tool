@@ -59,7 +59,6 @@ def locate_references_section(text: str) -> str:
     unwrapped = re.sub(r'(10\.\d{4,9}/[^\s]+?)-\s*\n\s*([^\s]+)', r'\1\2', text)
     unwrapped = re.sub(r'(10\.\d{4,9}/[^\s]*?)\s*\n\s*(?!\d+[\.\)\]\s])([a-zA-Z0-9.\-_/;()]+)', r'\1\2', unwrapped)
 
-
     headings = list(re.finditer(r'(?:^|\n)\s*(?:References|BIBLIOGRAPHY|Literature Cited|參考文獻)\s*:?\s*(?:\n|$)', unwrapped, re.IGNORECASE))
     if headings:
         start_idx = headings[-1].end()
@@ -67,7 +66,6 @@ def locate_references_section(text: str) -> str:
     else:
         search_start = int(len(unwrapped) * 0.6) if len(unwrapped) > 3000 else 0
         section = unwrapped[search_start:]
-
 
     ending_match = re.search(r'(?:^|\n)\s*(?:Supporting Information|Supplementary Information|Author Biographies|Biographies|Acknowledgements)\s*(?:\n|$)', section, re.IGNORECASE)
     if ending_match:
@@ -188,87 +186,3 @@ def extract_dois_from_text(text: str) -> List[Dict[str, Any]]:
             })
 
     return final_output
-
-def extract_all_reference_dois_with_ai(
-    paper_text: str,
-    api_key: str,
-    model_name: str = "gemini-3.6-flash"
-) -> List[Dict[str, Any]]:
-    """
-    AI Full-Reference DOI Extraction Engine:
-    Calls Gemini API to extract ALL 140+ reference DOIs in 1 single pass safely.
-    """
-    try:
-        from google import genai
-        from google.genai import types
-
-        client = genai.Client(api_key=api_key)
-        
-        search_start = int(len(paper_text) * 0.6)
-        tail_text = paper_text[search_start:]
-        pos_in_tail = max(
-            tail_text.find("\nReferences"),
-            tail_text.find("References\n"),
-            tail_text.find("\nREFERENCES"),
-            tail_text.find("REFERENCES\n")
-        )
-        if pos_in_tail != -1:
-            ref_text_block = paper_text[search_start + pos_in_tail:]
-        else:
-            ref_text_block = paper_text[search_start:]
-        
-        prompt = f"""
-你是頂尖學術參考文獻 DOI 提取專家。
-請閱讀這篇論文的 References 章節（共包含約 100~150 條文獻）。
-請幫我提取並還原出【每一條】文獻的純文字 DOI（格式如 10.1016/j.solmat.2026.114214）。
-
-References 內容：
-{ref_text_block[:35000]}
-
-請回傳純 JSON 陣列：
-[
-  {{"line_number": 1, "doi": "10.1016/j.solmat.2026.114214", "context": "(1) Author et al., Sol. Energy Mater.", "ai_status": "✅ 100% 精準對應文獻"}}
-]
-"""
-        candidate_models = [model_name, "gemini-3.1-flash-lite", "gemini-3.6-flash", "gemini-3.1-pro-preview"]
-        for target_m in candidate_models:
-            if not target_m: continue
-            try:
-                resp = client.models.generate_content(
-                    model=target_m,
-                    contents=[prompt],
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.0
-                    )
-                )
-                raw_txt = resp.text.strip()
-                raw_txt = re.sub(r'^```json\s*', '', raw_txt, flags=re.IGNORECASE)
-                raw_txt = re.sub(r'\s*```$', '', raw_txt).strip()
-                parsed = json.loads(raw_txt)
-
-                if isinstance(parsed, list) and len(parsed) > 0:
-                    results = []
-                    seen = set()
-                    for item in parsed:
-                        if isinstance(item, dict) and item.get("doi"):
-                            d_val = clean_doi(item["doi"])
-                            if d_val and d_val.startswith("10.") and "/" in d_val and d_val.lower() not in seen:
-                                seen.add(d_val.lower())
-                                results.append({
-                                    "doi": d_val,
-                                    "url": f"https://doi.org/{d_val}",
-                                    "line_number": item.get("line_number", len(results) + 1),
-                                    "context": item.get("context", f"AI 參考文獻提取 ({target_m})"),
-                                    "in_reference_section": True,
-                                    "verification": f"AI 全文還原 ({target_m})",
-                                    "ai_status": item.get("ai_status", "✅ AI 審核通過 (100% 對應原文)")
-                                })
-                    if len(results) > 0:
-                        return results
-            except Exception as e:
-                print(f"[AI Full DOI] Model {target_m} failed: {e}")
-    except Exception as outer_e:
-        print(f"[AI Full DOI Outer Error]: {outer_e}")
-
-    return []

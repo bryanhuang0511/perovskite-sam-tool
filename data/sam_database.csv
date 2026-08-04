@@ -1,0 +1,20 @@
+﻿job_id,created_at,filename,ref_id,sam_material,smiles,nio2,ethanol,toluene,ipa,thf,chlorobenzene,methoxyethanol_2,ch2cl2,concentration,wash,energy_e,cs,fa,ma,pb,sn,i,br,cl,c60,bcp,pc60bm,pcbm,pc61bm,peai,ald_sno2,pce,reference_doi,ref_author,ref_journal,notes
+JOB_20260804_084022_0C63,2026-08-04 08:40:22,test.pdf,,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,
+JOB_20260804_084047_1833,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084047_1117,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084047_1683,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084047_1E73,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084047_2544,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084047_12C8,2026-08-04 08:40:47,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_22D1,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_1D88,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_16D8,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_2239,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_076F,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_084500_08D5,2026-08-04 08:45:00,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_0C91,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_0B11,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_1C8B,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_1136,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_1015,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row
+JOB_20260804_090604_0C8D,2026-08-04 09:06:04,sample_perovskite.pdf,1-MeO-2PACz,MeO-2PACz,COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O,,,,,,,,,,,,0.05,0.85,0.1,,,,,,,,,,,,,22.8,,,,Test SQLite row

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鈣鈦礦 SAM 論文數據與 DOI 擷取工具 (Decoupled Frontend)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header>
+        <div class="logo-group">
+            <h1>🔬 鈣鈦礦 SAM 論文數據與 DOI 擷取工具</h1>
+            <p>前後端分離獨立架構 | 雙軌 SQLite + CSV 資料庫持久化與歷史查詢</p>
+        </div>
+        <div class="header-actions">
+            <!-- Multi-Model Provider Dropdown -->
+            <select id="modelProvider" class="provider-select">
+                <option value="gemini-3.6-flash">Google Gemini 3.6 Flash (免費 API 預設)</option>
+                <option value="gemini-3.1-pro-preview">Google Gemini 3.1 Pro (需付費 API 帳號)</option>
+                <option value="gemini-2.5-pro">Google Gemini 2.5 Pro (需付費 API 帳號)</option>
+                <option value="gemini-2.5-flash">Google Gemini 2.5 Flash</option>
+                <option value="openai">OpenAI (gpt-4o-mini)</option>
+                <option value="deepseek">DeepSeek (deepseek-chat)</option>
+            </select>
+
+            <div class="api-key-input-group" title="系統預設自動帶入伺服器端配置之 .env 安全金鑰，無需暴露個人 Key">
+                <label for="apiKey">🛡️ API Key (預設安全 Key):</label>
+                <input type="password" id="apiKey" placeholder="預設自動使用伺服器 Key (選填覆蓋)" />
+            </div>
+        </div>
+    </header>
+
+    <!-- Nav Tab Bar -->
+    <div class="nav-tabs">
+        <button class="nav-tab-btn active" id="tabLiveBtn" onclick="switchTab('live')">📄 即時論文數據擷取</button>
+        <button class="nav-tab-btn" id="tabHistoryBtn" onclick="switchTab('history')">🔍 歷史任務與 SQLite 數據查詢</button>
+    </div>
+
+    <main>
+        <!-- Tab 1: Live Extraction Panel -->
+        <div class="tab-content active" id="tabLiveContent">
+            <div class="upload-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="upload-card" id="dropZoneMain">
+                    <div class="upload-icon">📄</div>
+                    <div class="upload-title">1. 上傳【論文主文 PDF】</div>
+                    <div class="upload-subtitle" id="mainFileSubtitle" style="color: #94a3b8; font-weight: 500;">點擊上傳或拖曳主文 PDF (必填)</div>
+                    <input type="file" id="fileInputMain" accept=".pdf" style="display:none;" />
+                </div>
+
+                <div class="upload-card" id="dropZoneSi" style="border-color: #38bdf8;">
+                    <div class="upload-icon" style="color: #38bdf8;">📎</div>
+                    <div class="upload-title">2. 上傳【補充資訊 SI PDF】</div>
+                    <div class="upload-subtitle" id="siFileSubtitle" style="color: #94a3b8; font-weight: 500;">點擊上傳或拖曳 SI 補充檔案 (選填)</div>
+                    <input type="file" id="fileInputSi" accept=".pdf" style="display:none;" />
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 1rem;">
+                <button id="startExtractBtn" class="btn-primary" style="font-size: 1.1rem; padding: 0.8rem 2.5rem; display: none;">
+                    🚀 開始 AI 數據擷取與自動校驗
+                </button>
+            </div>
+
+            <div id="resultArea" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 id="resultTitle">📊 擷取成果表格</h3>
+                    <button class="btn-primary" onclick="exportCurrentExcel()">📥 匯出標準 Excel (.xlsx)</button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="samDataTable">
+                        <thead>
+                            <tr id="tableHeaderRow"></tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: History Query & SQLite Panel -->
+        <div class="tab-content" id="tabHistoryContent">
+            <div class="query-toolbar">
+                <div class="query-input-group">
+                    <label for="filterDate">📅 日期篩選:</label>
+                    <input type="date" id="filterDate" onchange="loadHistoryJobs()" />
+                </div>
+
+                <div class="query-input-group" style="flex: 1;">
+                    <label for="searchKeyword">🔍 關鍵字搜尋 (SAM/SMILES/DOI):</label>
+                    <input type="text" id="searchKeyword" placeholder="輸入 SAM 名稱、SMILES 或 DOI 關鍵字..." style="width: 100%;" onkeyup="handleSearchKeyup(event)" />
+                </div>
+
+                <button class="btn-primary" onclick="executeSearch()">搜尋 SQLite</button>
+                <button class="btn-primary" style="background: #334155;" onclick="resetHistoryFilters()">重設篩選</button>
+            </div>
+
+            <div id="jobListContainer">
+                <h3 style="margin-bottom: 1rem; color: #38bdf8;">📋 歷史任務紀錄列表 (SQLite)</h3>
+                <div class="job-list" id="jobGrid">
+                    <!-- Loaded dynamically by JS -->
+                </div>
+            </div>
+
+            <div id="jobDetailContainer" style="display: none; margin-top: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 id="jobDetailTitle">📊 任務明細</h3>
+                    <button class="btn-primary" id="exportJobExcelBtn" onclick="exportJobExcel(activeJobId)">📥 匯出此任務 Excel</button>
+                </div>
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr id="jobTableHeaderRow"></tr>
+                        </thead>
+                        <tbody id="jobTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

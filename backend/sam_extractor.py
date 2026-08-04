@@ -1,9 +1,25 @@
+import sys
+import os
 import re
 import json
-import os
 import base64
 import requests
 from typing import List, Dict, Any, Optional, Tuple, Union
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+for p in [BASE_DIR, ROOT_DIR]:
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    from extraction_tools import apply_fable_confidence_rules, KNOWN_SAM_SMILES
+except ImportError:
+    try:
+        from .extraction_tools import apply_fable_confidence_rules, KNOWN_SAM_SMILES
+    except ImportError:
+        from backend.extraction_tools import apply_fable_confidence_rules, KNOWN_SAM_SMILES
+
 
 COLUMN_KEYS = [
     "ref_id", "sam_material", "smiles", "nio2",
@@ -13,24 +29,6 @@ COLUMN_KEYS = [
     "c60", "bcp", "pc60bm", "pcbm", "pc61bm", "peai", "ald_sno2",
     "pce", "reference_doi", "ref_author", "ref_journal", "data_status", "notes"
 ]
-
-KNOWN_SAM_SMILES = {
-    "2PACz": "c1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "MeO-2PACz": "COc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "Me-2PACz": "Cc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "MeO-4PACz": "COc1ccc2c(c1)c3ccccc3n2CCCCP(=O)(O)O",
-    "Me-4PACz": "Cc1ccc2c(c1)c3ccccc3n2CCCCP(=O)(O)O",
-    "2PAC": "c1ccc2c(c1)c3ccccc3n2CCP(=O)(O)O",
-    "3PACz": "c1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "4PACz": "c1ccc2c(c1)c3ccccc3n2CCCCP(=O)(O)O",
-    "Br-2PACz": "Brc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "Cl-2PACz": "Clc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "E-2PACz": "C=CC(=O)Oc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "MPACz": "Cc1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "Ph-2PACz": "c1ccc(cc1)c2ccc3c(c2)c4ccccc4n3CCCP(=O)(O)O",
-    "tBu-2PACz": "CC(C)(C)c1ccc2c(c1)c3ccccc3n2CCCP(=O)(O)O",
-    "V1036": "COc1ccc(cc1)N(c2ccc(OC)cc2)c3ccc(cc3)P(=O)(O)O",
-}
 
 SYSTEM_PROMPT = """
 你是鈣鈦礦太陽能電池 SAM（自組裝單分子層）全量數據與 Reference DOI 擷取專家。
@@ -94,81 +92,66 @@ SYSTEM_PROMPT = """
 3. 若原文中記載為小數或比例，請精確保留所有有效位數 (例如 0.025, 0.975, 0.05, 22.84)。
 4. 若 PCE 或數值包含小數位 (例如 23.0)，請輸出浮點數 `23.0` 或字串 `"23.0"`，嚴禁截斷為整數 `23`！
 5. 必須仔細閱讀正文 Experimental Methods、SI 補充資訊與表格，擷取論文中記載的 SAM 濃度 (concentration)、溶劑 (ethanol, toluene, ipa, thf 等) 與鈣鈦礦組成成分 (Cs, FA, MA, Pb, Sn, I, Br, Cl)，不可將內文已有記載的特徵全填 0！
-
-【🎯 關鍵特徵欄位強效定位與解析指南 (Concentration / Energy_E / Wash)】：
-1. **Concentration (SAM 溶液濃度, mg/mL)**：
-   - 請務必至【Experimental Methods / Device Fabrication / Substrate Preparation】章節尋找關鍵字如 `dissolved in`, `concentration of`, `mg/mL`, `mM`, `mmol/L`, `0.5 mg/mL`, `3 mM`。
-   - 若記載為 `mM` 或 `mg/mL` (例如 0.5 mg/mL 或 3 mM)，請提取該數值，切勿直接填 0！
-2. **Energy_E (能階 / 工作函數 / 結合能, eV)**：
-   - 請搜尋論文正文、UPS/XPS 實驗敘述、能階圖與圖表說明 (Figure Captions) 中提及的 `WF` (Work Function), `HOMO`, `VBM`, `binding energy`, `energy level`, `eV`, `dipole shift` 等數值 (例如 `0.25`, `5.14`, `-5.3`)。
-3. **Wash (溶劑洗滌 1/0)**：
-   - 尋找正文中是否有 `rinsed with`, `washed with`, `spin-flushed with` (如以 ethanol/IPA 沖洗單分子層)。有洗滌填 `1`，未洗滌或未提及填 `0`。
-4. **雙欄排版 (Two-Column Layout) 語意關聯補償**：
-   - 本文可能包含雙欄排版 (Two-Column Layout)，若文字跨欄或斷行，請跨行整合語意，將 SAM 材料名稱、濃度、洗滌溶劑與 PCE 效率正確歸屬至同一筆 SAM 數據點！
-
-核心原則：
-1. 擷取【當前論文】內文與表格中【所有】符合 p-i-n (inverted) 結構單接面電池的 SAM 數據點。
-2. 跨段落整合正文、實驗方法與表格，為每一個數據點完整補齊 35 個欄位。
 """
 
-def extract_sam_data_with_gemini(markdown_text: str, api_key: str, model_name: str = "gemini-3.6-flash", images_base64: List[str] = None, si_markdown_text: Optional[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Extract SAM dataset & Reference DOIs using Google Gemini API with stateless guarantee."""
+
+def extract_sam_data_with_gemini(
+    markdown_text: str,
+    api_key: str,
+    model_name: str = "gemini-3.6-flash",
+    images_base64: List[str] = None,
+    si_markdown_text: Optional[str] = None
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Extract SAM dataset using Google GenAI SDK."""
     from google import genai
     from google.genai import types
-    
+
     client = genai.Client(api_key=api_key)
-    prompt = SYSTEM_PROMPT + f"\n\n【當前獨立論文 100% 全文內容】：\n{markdown_text}"
+    
+    full_text = markdown_text
     if si_markdown_text and si_markdown_text.strip():
-        prompt += f"\n\n【當前論文 Supporting Information (SI) 補充資訊全文 (包含 Table S1, S2 SMILES, S3 實驗條件與能階細節)】：\n{si_markdown_text[:35000]}"
+        full_text += f"\n\n【Supporting Information (SI)】：\n{si_markdown_text}"
+
+    prompt = f"{SYSTEM_PROMPT}\n\n【當前獨立論文 100% 全文內容】：\n{full_text}"
     
     contents = [prompt]
-    
     if images_base64:
-        for img_b64 in images_base64[:3]:
-            if "," in img_b64:
-                img_b64 = img_b64.split(",")[1]
-            img_data = base64.b64decode(img_b64)
-            contents.append(types.Part.from_bytes(data=img_data, mime_type="image/png"))
+        for img_b64 in images_base64[:5]:
+            try:
+                img_bytes = base64.b64decode(img_b64)
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
+            except Exception:
+                pass
 
-    candidate_models = [model_name, "gemini-3.6-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-2.0-flash", "gemini-flash-latest"]
+    response = client.models.generate_content(
+        model=model_name,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            temperature=0.0
+        )
+    )
+
+    usage_info = {
+        "input_tokens": getattr(response.usage_metadata, "prompt_token_count", 0),
+        "output_tokens": getattr(response.usage_metadata, "candidates_token_count", 0),
+        "total_tokens": getattr(response.usage_metadata, "total_token_count", 0),
+        "model_used": model_name,
+        "provider": "gemini"
+    }
+
+    content_text = response.text.strip()
+    content_text = re.sub(r'^```json\s*', '', content_text, flags=re.IGNORECASE)
+    content_text = re.sub(r'\s*```$', '', content_text).strip()
+
+    parsed = json.loads(content_text)
+    if isinstance(parsed, dict):
+        return parsed, usage_info
+    elif isinstance(parsed, list):
+        return {"sam_dataset": parsed, "reference_dois": []}, usage_info
     
-    last_error = None
-    for target_m in candidate_models:
-        if not target_m:
-            continue
-        try:
-            print(f"[Gemini API] Calling model: {target_m} with 100% full paper text ({len(markdown_text)} chars)...")
-            response = client.models.generate_content(
-                model=target_m,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0,  # 0.0 temperature for deterministic & 0-memory response!
-                ),
-            )
-            parsed = json.loads(response.text)
+    return {"sam_dataset": [], "reference_dois": []}, usage_info
 
-            usage_info = {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
-                "model_used": target_m,
-                "provider": "google-gemini"
-            }
-            if hasattr(response, 'usage_metadata') and response.usage_metadata:
-                usage_info["input_tokens"] = getattr(response.usage_metadata, 'prompt_token_count', 0)
-                usage_info["output_tokens"] = getattr(response.usage_metadata, 'candidates_token_count', 0)
-                usage_info["total_tokens"] = getattr(response.usage_metadata, 'total_token_count', 0)
-
-            if isinstance(parsed, dict):
-                return parsed, usage_info
-            elif isinstance(parsed, list):
-                return {"sam_dataset": parsed, "reference_dois": []}, usage_info
-        except Exception as e:
-            print(f"[Gemini API] Model {target_m} failed: {e}")
-            last_error = e
-
-    raise RuntimeError(f"Gemini API 呼叫失敗: {last_error}")
 
 def extract_sam_data_with_openai_compatible(
     markdown_text: str,
@@ -176,7 +159,7 @@ def extract_sam_data_with_openai_compatible(
     model_name: str = "gpt-4o-mini",
     api_base: str = "https://api.openai.com/v1"
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """Extract SAM dataset & Reference DOIs using OpenAI-compatible API with stateless guarantee."""
+    """Extract SAM dataset using OpenAI compatible REST API."""
     url = f"{api_base.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -219,10 +202,6 @@ def extract_sam_data_with_openai_compatible(
 
     raise RuntimeError("無法解析模型 JSON 回傳。")
 
-try:
-    from src.extraction_tools import apply_fable_confidence_rules
-except ImportError:
-    from extraction_tools import apply_fable_confidence_rules
 
 def post_process_sam_dataset(sam_dataset: List[Dict[str, Any]], paper_text: str = "") -> List[Dict[str, Any]]:
     """Post-process SAM dataset using RDKit SMILES validation & Fable 5 rule engine."""
@@ -243,6 +222,7 @@ def post_process_sam_dataset(sam_dataset: List[Dict[str, Any]], paper_text: str 
 
         processed.append(row)
     return processed
+
 
 def process_paper_markdown(
     markdown_text: str,
@@ -274,4 +254,3 @@ def process_paper_markdown(
     if return_usage:
         return res_dict, usage_info
     return res_dict
-

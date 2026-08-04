@@ -7,12 +7,27 @@ from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 base_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(base_dir)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
+
+# Also load .env from parent_dir / current dir if present
+try:
+    from dotenv import load_dotenv
+    env_file = os.path.join(parent_dir, ".env")
+    if os.path.exists(env_file):
+        load_dotenv(env_file)
+except Exception:
+    pass
 
 try:
     from src.doi_extractor import extract_dois_from_text, clean_doi
@@ -23,7 +38,7 @@ except ImportError:
     from sam_extractor import process_paper_markdown
     from excel_exporter import generate_sam_excel
 
-app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1.0.0")
+app = FastAPI(title="鈣鈦礦 SAM 論文數據與 DOI 擷取工具", version="1.1.0")
 
 static_dir = os.path.join(base_dir, "static")
 if not os.path.exists(static_dir):
@@ -40,6 +55,18 @@ NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0"
 }
+
+@app.get("/api/health")
+def health_check():
+    """Health check route displaying API Key server configuration status."""
+    gemini_key_set = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
+    openai_key_set = bool(os.getenv("OPENAI_API_KEY"))
+    return {
+        "status": "ok",
+        "gemini_key_configured": gemini_key_set,
+        "openai_key_configured": openai_key_set,
+        "security_mode": "Backend Secure API Key Proxy Active"
+    }
 
 def safe_truncate_paper_text(text: str, max_chars: int = 55000) -> str:
     """Intelligently compress ultra-long paper text to fit within Vercel Serverless 10s & Memory limits."""
@@ -97,6 +124,14 @@ async def extract_text_sam(payload: dict):
         model_name = payload.get("model_name", "gemini-3.6-flash")
         api_base = payload.get("api_base", "https://api.openai.com/v1")
         
+        # Secure API Key Fallback from server environment
+        if not api_key or not str(api_key).strip():
+            if provider == "gemini":
+                api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+            else:
+                api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+
+        
         if not raw_markdown.strip():
             raise HTTPException(status_code=400, detail="未收到論文文字內容。")
 
@@ -148,7 +183,14 @@ async def convert_and_extract(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
+    if not api_key or not str(api_key).strip():
+        if provider == "gemini":
+            api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        else:
+            api_key = os.getenv("OPENAI_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+
     temp_dir = tempfile.mkdtemp()
+
     temp_pdf_path = os.path.join(temp_dir, file.filename)
     
     try:

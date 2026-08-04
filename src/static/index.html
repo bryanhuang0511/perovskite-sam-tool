@@ -608,10 +608,11 @@
 
             <input type="text" id="customModelName" class="model-input" placeholder="模型名稱 (例 gemini-3.1-pro-preview)" style="display:none;" />
 
-            <div class="api-key-input-group">
-                <label for="apiKey">API Key (選填):</label>
-                <input type="password" id="apiKey" placeholder="貼上 API Key 啟用 AI..." />
+            <div class="api-key-input-group" title="系統預設自動帶入伺服器端配置之 .env 安全金鑰，無需暴露個人 Key">
+                <label for="apiKey">🛡️ API Key (預設安全 Key):</label>
+                <input type="password" id="apiKey" placeholder="預設自動使用伺服器 Key (選填覆蓋)" />
             </div>
+
         </div>
     </header>
 
